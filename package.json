@@ -1,21 +1,79 @@
 {
   "name": "arb-bot",
   "version": "1.0.0",
+  "description": "Flash-loan arbitrage bot for Ethereum Layer-2 networks",
+  "main": "scripts/run-bot.ts",
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:arb": "hardhat run scripts/deploy.ts --network arbitrum",
-    "deploy:opt": "hardhat run scripts/deploy.ts --network optimism"
+    "test:unit": "hardhat test test/FlashLoan.test.ts",
+    "test:enhanced": "hardhat test test/EnhancedArbitrage.test.ts",
+    "test:integration": "hardhat test test/Integration.test.ts",
+    "test:triangular": "hardhat test test/EnhancedArbitrage.test.ts --grep 'Triangular'",
+    "deploy:arb": "hardhat run scripts/deploy-multichain.ts --network arbitrum",
+    "deploy:opt": "hardhat run scripts/deploy-multichain.ts --network optimism",
+    "deploy:local": "hardhat run scripts/deploy-multichain.ts --network localhost",
+    "deploy:legacy": "hardhat run scripts/deploy.ts --network localhost",
+    "bot:start": "ts-node scripts/run-bot.ts",
+    "bot:simulate": "ts-node scripts/simulate.ts",
+    "bot:multichain": "ENABLE_CROSS_CHAIN_MONITORING=true ts-node scripts/run-bot.ts",
+    "bot:triangular": "ENABLE_TRIANGULAR_ARBITRAGE=true ts-node scripts/run-bot.ts",
+    "setup:wallet": "ts-node scripts/setup-helper.ts wallet",
+    "setup:flashbots": "ts-node scripts/setup-helper.ts flashbots",
+    "setup:validate": "ts-node scripts/setup-helper.ts validate",
+    "setup:env": "ts-node scripts/setup-helper.ts env",
+    "setup:all": "ts-node scripts/setup-helper.ts all",
+    "setup": "ts-node scripts/setup-helper.ts",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write .",
+    "build": "tsc"
   },
   "dependencies": {
     "ethers": "^6.7.0",
     "@flashbots/ethers-provider-bundle": "^1.0.0",
-    "dotenv": "^16.0.0"
+    "@flashbots/mev-share-client": "^1.0.0",
+    "dotenv": "^16.0.0",
+    "ws": "^8.13.0",
+    "node-cron": "^3.0.2",
+    "chalk": "^4.1.2",
+    "winston": "^3.8.2",
+    "pino": "^8.11.0",
+    "axios": "^1.4.0",
+    "big.js": "^6.2.1"
   },
   "devDependencies": {
     "hardhat": "^2.21.0",
     "@nomiclabs/hardhat-ethers": "^2.2.2",
+    "@openzeppelin/contracts": "^4.9.0",
     "@types/node": "^18.0.0",
-    "typescript": "^4.9.5"
+    "@types/ws": "^8.5.4",
+    "@types/big.js": "^6.1.6",
+    "@typescript-eslint/eslint-plugin": "^5.59.0",
+    "@typescript-eslint/parser": "^5.59.0",
+    "eslint": "^8.39.0",
+    "prettier": "^2.8.8",
+    "typescript": "^4.9.5",
+    "chai": "^4.3.7",
+    "@types/chai": "^4.3.4",
+    "@types/mocha": "^10.0.1",
+    "mocha": "^10.2.0",
+    "ts-node": "^10.9.1",
+    "hardhat-gas-reporter": "^1.0.9",
+    "solidity-coverage": "^0.8.2"
+  },
+  "keywords": [
+    "arbitrage",
+    "flash-loan",
+    "mev",
+    "ethereum",
+    "layer2",
+    "arbitrum",
+    "optimism",
+    "defi"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
