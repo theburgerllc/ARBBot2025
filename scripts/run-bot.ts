@@ -1,11 +1,12 @@
 import { ethers } from "ethers";
-import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
+import { FlashbotsBundleProvider, FlashbotsBundleTransaction, FlashbotsBundleResolution } from "@flashbots/ethers-provider-bundle";
 import { MevShareClient } from "@flashbots/mev-share-client";
 import dotenv from "dotenv";
 import chalk from "chalk";
 import winston from "winston";
 import cron from "node-cron";
 import Big from "big.js";
+import axios from "axios";
 
 import balancerVaultABI from "../abi/BalancerVault.json";
 import uniswapV2RouterABI from "../abi/UniswapV2Router.json";
@@ -15,33 +16,48 @@ import erc20ABI from "../abi/ERC20.json";
 
 dotenv.config();
 
+// Enhanced logging configuration
 const logger = winston.createLogger({
-  level: "info",
+  level: process.env.LOG_LEVEL || "info",
   format: winston.format.combine(
     winston.format.timestamp(),
-    winston.format.colorize(),
-    winston.format.simple()
+    winston.format.errors({ stack: true }),
+    winston.format.json()
   ),
   transports: [
-    new winston.transports.Console(),
-    new winston.transports.File({ filename: "bot.log" })
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    }),
+    new winston.transports.File({ filename: "bot.log" }),
+    new winston.transports.File({ filename: "bot-error.log", level: "error" })
   ]
 });
 
+// Enhanced interfaces for MEV operations
 interface ArbitrageOpportunity {
+  id: string;
   tokenA: string;
   tokenB: string;
   amountIn: string;
   expectedProfit: string;
+  netProfit: string;
   sushiFirst: boolean;
   path: string[];
   gasEstimate: string;
+  gasCost: string;
   timestamp: number;
   isTriangular?: boolean;
-  chainId?: number;
+  chainId: number;
+  priority: number;
+  spread: number;
+  slippage: number;
 }
 
 interface CrossChainOpportunity {
+  id: string;
   tokenA: string;
   tokenB: string;
   amountIn: string;
@@ -50,327 +66,520 @@ interface CrossChainOpportunity {
   spread: string;
   estimatedProfit: string;
   bridgeCost: string;
+  netProfit: string;
   timestamp: number;
+  profitable: boolean;
+  alertLevel: 'info' | 'warning' | 'critical';
+}
+
+interface MEVBundle {
+  transactions: FlashbotsBundleTransaction[];
+  targetBlockNumber: number;
+  bundleHash?: string;
+  simulation?: any;
+  gasUsed?: string;
+  gasPrice?: string;
+  profit?: string;
 }
 
 interface TokenPair {
-  token0: string;
-  token1: string;
-  symbol0: string;
-  symbol1: string;
-  decimals0: number;
-  decimals1: number;
+  tokenA: string;
+  tokenB: string;
+  symbolA: string;
+  symbolB: string;
+  decimalsA: number;
+  decimalsB: number;
+  minAmount: string;
+  maxAmount: string;
 }
 
-class ArbitrageBot {
+interface GasSettings {
+  gasLimit: bigint;
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+  baseFee: bigint;
+}
+
+class EnhancedMEVBot {
+  // Provider setup
   private arbitrumProvider: ethers.JsonRpcProvider;
   private optimismProvider: ethers.JsonRpcProvider;
-  private wallet: ethers.Wallet;
-  private optimismWallet: ethers.Wallet;
+  private executorSigner: ethers.Wallet;
+  private authSigner: ethers.Wallet;
+  private optimismExecutor: ethers.Wallet;
+  
+  // Flashbots integration
   private flashbotsProvider: FlashbotsBundleProvider;
   private mevShareClient: MevShareClient;
-  private botContract: ethers.Contract;
-  private optimismBotContract: ethers.Contract;
-  private uniswapV2Router: ethers.Contract;
-  private sushiSwapRouter: ethers.Contract;
-  private uniswapV3Quoter: ethers.Contract;
-  private balancerVault: ethers.Contract;
+  
+  // Contract instances
+  private arbBotContract: ethers.Contract;
+  private optBotContract: ethers.Contract;
+  private arbBalancerVault: ethers.Contract;
+  private optBalancerVault: ethers.Contract;
+  
+  // Router contracts - Arbitrum
+  private arbUniV2Router: ethers.Contract;
+  private arbSushiRouter: ethers.Contract;
+  private arbUniV3Quoter: ethers.Contract;
+  
+  // Router contracts - Optimism
+  private optUniV2Router: ethers.Contract;
+  private optSushiRouter: ethers.Contract;
+  private optUniV3Quoter: ethers.Contract;
   
   // Token addresses - Arbitrum
-  private readonly WETH_ARB = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
-  private readonly USDC_ARB = "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8";
-  private readonly USDT_ARB = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9";
-  private readonly WBTC_ARB = "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f";
+  private readonly TOKENS_ARB = {
+    WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    USDC: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
+    USDT: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+    WBTC: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f"
+  };
   
   // Token addresses - Optimism
-  private readonly WETH_OPT = "0x4200000000000000000000000000000000000006";
-  private readonly USDC_OPT = "0x7F5c764cBc14f9669B88837ca1490cCa17c31607";
-  private readonly USDT_OPT = "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58";
-  private readonly WBTC_OPT = "0x68f180fcCe6836688e9084f035309E29Bf0A2095";
+  private readonly TOKENS_OPT = {
+    WETH: "0x4200000000000000000000000000000000000006",
+    USDC: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
+    USDT: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+    WBTC: "0x68f180fcCe6836688e9084f035309E29Bf0A2095"
+  };
   
   // Router addresses
-  private readonly UNI_V2_ROUTER_ARB = "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24";
-  private readonly SUSHI_ROUTER_ARB = "0xf2614A233c7C3e7f08b1F887Ba133a13f1eb2c55";
-  private readonly UNI_V2_ROUTER_OPT = "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2";
-  private readonly SUSHI_ROUTER_OPT = "0x2ABf469074dc0b54d793850807E6eb5Faf2625b1";
+  private readonly ROUTERS_ARB = {
+    UNISWAP_V2: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372ad24",
+    SUSHISWAP: "0xf2614A233c7C3e7f08b1F887Ba133a13f1eb2c55",
+    UNISWAP_V3_QUOTER: "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
+  };
   
-  private readonly MIN_PROFIT_THRESHOLD = ethers.parseEther("0.01"); // 0.01 ETH
+  private readonly ROUTERS_OPT = {
+    UNISWAP_V2: "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2",
+    SUSHISWAP: "0x2ABf469074dc0b54d793850807E6eb5Faf2625b1",
+    UNISWAP_V3_QUOTER: "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
+  };
+  
+  // Trading pairs configuration
+  private readonly TRADING_PAIRS: TokenPair[] = [
+    {
+      tokenA: this.TOKENS_ARB.WETH,
+      tokenB: this.TOKENS_ARB.USDT,
+      symbolA: "WETH",
+      symbolB: "USDT",
+      decimalsA: 18,
+      decimalsB: 6,
+      minAmount: ethers.parseEther("0.1").toString(),
+      maxAmount: ethers.parseEther("10").toString()
+    },
+    {
+      tokenA: this.TOKENS_ARB.WBTC,
+      tokenB: this.TOKENS_ARB.WETH,
+      symbolA: "WBTC",
+      symbolB: "WETH",
+      decimalsA: 8,
+      decimalsB: 18,
+      minAmount: ethers.parseUnits("0.01", 8).toString(),
+      maxAmount: ethers.parseUnits("1", 8).toString()
+    }
+  ];
+  
+  // Configuration constants
+  private readonly MIN_PROFIT_THRESHOLD = ethers.parseEther("0.01");
   private readonly MIN_CROSS_CHAIN_SPREAD = 0.0005; // 0.05%
-  private readonly GAS_LIMIT = 500000n;
-  private readonly MAX_PRIORITY_FEE = ethers.parseUnits("2", "gwei");
-  private readonly COOLDOWN_PERIOD = 30000; // 30 seconds
+  private readonly CRITICAL_SPREAD_THRESHOLD = 0.002; // 0.2%
+  private readonly MAX_SLIPPAGE = 0.03; // 3%
+  private readonly BUNDLE_TIMEOUT = 30000; // 30 seconds
+  private readonly PRICE_UPDATE_INTERVAL = 5000; // 5 seconds
+  private readonly GAS_LIMIT = 800000n;
+  private readonly MAX_PRIORITY_FEE = ethers.parseUnits("3", "gwei");
+  private readonly COOLDOWN_PERIOD = 15000; // 15 seconds
   
+  // State management
   private lastExecutionTime = 0;
   private isRunning = false;
-  private crossChainMonitoringActive = false;
+  private crossChainEnabled = false;
+  private triangularEnabled = false;
+  private simulationMode = false;
+  private circuitBreakerTripped = false;
+  private totalProfit = BigInt(0);
+  private totalLoss = BigInt(0);
+  private executionCount = 0;
+  private opportunityCache = new Map<string, ArbitrageOpportunity>();
   
   constructor() {
-    this.arbitrumProvider = new ethers.JsonRpcProvider(process.env.ARB_RPC!);
-    this.optimismProvider = new ethers.JsonRpcProvider(process.env.OPT_RPC!);
-    this.wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, this.arbitrumProvider);
-    this.optimismWallet = new ethers.Wallet(process.env.PRIVATE_KEY!, this.optimismProvider);
+    this.initializeConfiguration();
+    this.setupProviders();
+    this.setupSigners();
+    this.initializeContracts();
+  }
+  
+  private initializeConfiguration(): void {
+    this.crossChainEnabled = process.env.ENABLE_CROSS_CHAIN_MONITORING === "true";
+    this.triangularEnabled = process.env.ENABLE_TRIANGULAR_ARBITRAGE === "true";
+    this.simulationMode = process.env.ENABLE_SIMULATION_MODE === "true";
     
-    // Initialize Arbitrum contracts
-    this.balancerVault = new ethers.Contract(
+    logger.info(chalk.blue("🔧 Configuration initialized"), {
+      crossChain: this.crossChainEnabled,
+      triangular: this.triangularEnabled,
+      simulation: this.simulationMode
+    });
+  }
+  
+  private setupProviders(): void {
+    this.arbitrumProvider = new ethers.JsonRpcProvider(process.env.ARB_RPC!, {
+      name: "arbitrum",
+      chainId: 42161
+    });
+    
+    this.optimismProvider = new ethers.JsonRpcProvider(process.env.OPT_RPC!, {
+      name: "optimism",
+      chainId: 10
+    });
+    
+    logger.info(chalk.green("✅ Providers initialized"));
+  }
+  
+  private setupSigners(): void {
+    this.executorSigner = new ethers.Wallet(process.env.PRIVATE_KEY!, this.arbitrumProvider);
+    this.authSigner = new ethers.Wallet(process.env.FLASHBOTS_AUTH_KEY!, this.arbitrumProvider);
+    this.optimismExecutor = new ethers.Wallet(process.env.PRIVATE_KEY!, this.optimismProvider);
+    
+    logger.info(chalk.green("✅ Signers configured"), {
+      executor: this.executorSigner.address,
+      auth: this.authSigner.address
+    });
+  }
+  
+  private initializeContracts(): void {
+    // Arbitrum contracts
+    this.arbBotContract = new ethers.Contract(
+      process.env.BOT_CONTRACT_ADDRESS!,
+      [], // ABI would be loaded from compilation
+      this.executorSigner
+    );
+    
+    this.arbBalancerVault = new ethers.Contract(
       process.env.BALANCER_VAULT_ADDRESS!,
       balancerVaultABI,
-      this.wallet
+      this.executorSigner
     );
     
-    this.uniswapV2Router = new ethers.Contract(
-      this.UNI_V2_ROUTER_ARB,
+    this.arbUniV2Router = new ethers.Contract(
+      this.ROUTERS_ARB.UNISWAP_V2,
       uniswapV2RouterABI,
-      this.wallet
+      this.executorSigner
     );
     
-    this.sushiSwapRouter = new ethers.Contract(
-      this.SUSHI_ROUTER_ARB,
+    this.arbSushiRouter = new ethers.Contract(
+      this.ROUTERS_ARB.SUSHISWAP,
       sushiSwapRouterABI,
-      this.wallet
+      this.executorSigner
     );
     
-    this.uniswapV3Quoter = new ethers.Contract(
-      process.env.UNISWAP_V3_QUOTER_ADDRESS!,
+    this.arbUniV3Quoter = new ethers.Contract(
+      this.ROUTERS_ARB.UNISWAP_V3_QUOTER,
       uniswapV3QuoterABI,
-      this.wallet
+      this.executorSigner
     );
     
-    this.botContract = new ethers.Contract(
-      process.env.BOT_CONTRACT_ADDRESS!,
-      [], // Will be populated from compilation
-      this.wallet
-    );
-    
-    // Initialize Optimism contracts if deployed
-    if (process.env.OPT_BOT_CONTRACT_ADDRESS) {
-      this.optimismBotContract = new ethers.Contract(
+    // Optimism contracts (if cross-chain enabled)
+    if (this.crossChainEnabled && process.env.OPT_BOT_CONTRACT_ADDRESS) {
+      this.optBotContract = new ethers.Contract(
         process.env.OPT_BOT_CONTRACT_ADDRESS,
         [],
-        this.optimismWallet
+        this.optimismExecutor
+      );
+      
+      this.optBalancerVault = new ethers.Contract(
+        process.env.OPT_BALANCER_VAULT_ADDRESS!,
+        balancerVaultABI,
+        this.optimismExecutor
+      );
+      
+      this.optUniV2Router = new ethers.Contract(
+        this.ROUTERS_OPT.UNISWAP_V2,
+        uniswapV2RouterABI,
+        this.optimismExecutor
+      );
+      
+      this.optSushiRouter = new ethers.Contract(
+        this.ROUTERS_OPT.SUSHISWAP,
+        sushiSwapRouterABI,
+        this.optimismExecutor
+      );
+      
+      this.optUniV3Quoter = new ethers.Contract(
+        this.ROUTERS_OPT.UNISWAP_V3_QUOTER,
+        uniswapV3QuoterABI,
+        this.optimismExecutor
       );
     }
+    
+    logger.info(chalk.green("✅ Contracts initialized"));
   }
-
-  async initialize() {
+  
+  async initialize(): Promise<void> {
     try {
-      // Initialize Flashbots
-      const authSigner = new ethers.Wallet(process.env.FLASHBOTS_AUTH_KEY!, this.arbitrumProvider);
+      // Initialize Flashbots provider
       this.flashbotsProvider = await FlashbotsBundleProvider.create(
         this.arbitrumProvider,
-        authSigner,
+        this.authSigner,
         process.env.FLASHBOTS_RELAY_URL || "https://relay.flashbots.net",
         "arbitrum"
       );
       
       // Initialize MEV-Share client
       this.mevShareClient = new MevShareClient({
-        name: "arbitrage-bot",
+        name: "enhanced-arb-bot",
         url: process.env.MEV_SHARE_URL || "https://mev-share.flashbots.net",
-        signer: authSigner
+        signer: this.authSigner
       });
       
-      logger.info(chalk.green("✓ Multi-chain Bot initialized successfully"));
-      logger.info(chalk.blue(`Arbitrum Wallet: ${this.wallet.address}`));
-      logger.info(chalk.blue(`Optimism Wallet: ${this.optimismWallet.address}`));
+      // Verify balances
+      const arbBalance = await this.arbitrumProvider.getBalance(this.executorSigner.address);
+      const optBalance = this.crossChainEnabled ? 
+        await this.optimismProvider.getBalance(this.optimismExecutor.address) : 0n;
       
-      const arbBalance = await this.arbitrumProvider.getBalance(this.wallet.address);
-      const optBalance = await this.optimismProvider.getBalance(this.optimismWallet.address);
+      logger.info(chalk.green("🚀 Enhanced MEV Bot initialized"), {
+        arbitrumBalance: ethers.formatEther(arbBalance),
+        optimismBalance: ethers.formatEther(optBalance),
+        flashbotsEnabled: true,
+        mevShareEnabled: true
+      });
       
-      logger.info(chalk.blue(`Arbitrum Balance: ${ethers.formatEther(arbBalance)} ETH`));
-      logger.info(chalk.blue(`Optimism Balance: ${ethers.formatEther(optBalance)} ETH`));
-      
-      // Enable cross-chain monitoring if both networks are configured
-      if (process.env.OPT_RPC && process.env.ARB_RPC) {
-        this.crossChainMonitoringActive = true;
-        logger.info(chalk.green("✓ Cross-chain monitoring enabled"));
-      }
+      // Check circuit breaker
+      await this.checkCircuitBreaker();
       
     } catch (error) {
-      logger.error(chalk.red("Failed to initialize bot:"), error);
+      logger.error(chalk.red("❌ Initialization failed"), error);
       throw error;
     }
   }
-
-  async scanForOpportunities(): Promise<ArbitrageOpportunity[]> {
+  
+  async scanForArbitrageOpportunities(): Promise<ArbitrageOpportunity[]> {
     const opportunities: ArbitrageOpportunity[] = [];
     
     try {
-      const amounts = [
-        ethers.parseEther("1"),    // 1 ETH
-        ethers.parseEther("5"),    // 5 ETH
-        ethers.parseEther("10"),   // 10 ETH
-        ethers.parseEther("25"),   // 25 ETH
-      ];
-      
-      // Define trading pairs for both networks
-      const arbitrumPairs = [
-        [this.WETH_ARB, this.USDC_ARB],
-        [this.WETH_ARB, this.USDT_ARB],
-        [this.WBTC_ARB, this.WETH_ARB],
-      ];
-      
-      const optimismPairs = [
-        [this.WETH_OPT, this.USDC_OPT],
-        [this.WETH_OPT, this.USDT_OPT],
-        [this.WBTC_OPT, this.WETH_OPT],
-      ];
-      
       // Scan Arbitrum opportunities
-      for (const pair of arbitrumPairs) {
-        for (const amount of amounts) {
-          const opp1 = await this.checkArbitrageOpportunity(amount, pair, true, 42161);
-          const opp2 = await this.checkArbitrageOpportunity(amount, pair, false, 42161);
-          
-          if (opp1) opportunities.push(opp1);
-          if (opp2) opportunities.push(opp2);
-        }
+      const arbOpps = await this.scanChainOpportunities(42161);
+      opportunities.push(...arbOpps);
+      
+      // Scan Optimism opportunities (if enabled)
+      if (this.crossChainEnabled) {
+        const optOpps = await this.scanChainOpportunities(10);
+        opportunities.push(...optOpps);
       }
       
-      // Scan triangular arbitrage (Arbitrum only for now)
-      const triangularPath = [this.WETH_ARB, this.USDT_ARB, this.USDC_ARB, this.WETH_ARB];
-      for (const amount of amounts) {
-        const triangularOpp = await this.checkTriangularArbitrageOpportunity(amount, triangularPath);
-        if (triangularOpp) opportunities.push(triangularOpp);
+      // Scan triangular opportunities
+      if (this.triangularEnabled) {
+        const triangularOpps = await this.scanTriangularOpportunities();
+        opportunities.push(...triangularOpps);
       }
       
-      // Cross-chain opportunities
-      if (this.crossChainMonitoringActive) {
-        const crossChainOpps = await this.scanCrossChainOpportunities();
-        // Convert cross-chain opportunities to regular opportunities format
-        for (const crossOpp of crossChainOpps) {
-          if (Big(crossOpp.estimatedProfit).gt(0)) {
-            logger.info(chalk.yellow(`🌉 Cross-chain opportunity detected: ${crossOpp.spread}% spread`));
-          }
-        }
-      }
+      // Sort by priority and net profit
+      opportunities.sort((a, b) => {
+        const priorityDiff = b.priority - a.priority;
+        if (priorityDiff !== 0) return priorityDiff;
+        return Big(b.netProfit).minus(Big(a.netProfit)).toNumber();
+      });
       
-      // Sort by expected profit (highest first)
-      opportunities.sort((a, b) => 
-        Big(b.expectedProfit).minus(Big(a.expectedProfit)).toNumber()
-      );
+      // Cache opportunities
+      opportunities.forEach(opp => {
+        this.opportunityCache.set(opp.id, opp);
+      });
       
       return opportunities;
       
     } catch (error) {
-      logger.error(chalk.red("Error scanning for opportunities:"), error);
+      logger.error(chalk.red("Error scanning opportunities"), error);
       return [];
     }
   }
-
-  async checkArbitrageOpportunity(
+  
+  private async scanChainOpportunities(chainId: number): Promise<ArbitrageOpportunity[]> {
+    const opportunities: ArbitrageOpportunity[] = [];
+    const provider = chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;
+    const uniRouter = chainId === 42161 ? this.arbUniV2Router : this.optUniV2Router;
+    const sushiRouter = chainId === 42161 ? this.arbSushiRouter : this.optSushiRouter;
+    const tokens = chainId === 42161 ? this.TOKENS_ARB : this.TOKENS_OPT;
+    
+    const amounts = [
+      ethers.parseEther("1"),
+      ethers.parseEther("2"),
+      ethers.parseEther("5"),
+      ethers.parseEther("10")
+    ];
+    
+    for (const pair of this.TRADING_PAIRS) {
+      const tokenA = chainId === 42161 ? pair.tokenA : this.getOptimismToken(pair.tokenA);
+      const tokenB = chainId === 42161 ? pair.tokenB : this.getOptimismToken(pair.tokenB);
+      
+      for (const amount of amounts) {
+        // Check both directions
+        const opp1 = await this.checkDualRouterArbitrage(
+          tokenA, tokenB, amount, true, chainId
+        );
+        const opp2 = await this.checkDualRouterArbitrage(
+          tokenA, tokenB, amount, false, chainId
+        );
+        
+        if (opp1) opportunities.push(opp1);
+        if (opp2) opportunities.push(opp2);
+      }
+    }
+    
+    return opportunities;
+  }
+  
+  private async checkDualRouterArbitrage(
+    tokenA: string,
+    tokenB: string,
     amount: bigint,
-    path: string[],
     sushiFirst: boolean,
-    chainId: number = 42161
+    chainId: number
   ): Promise<ArbitrageOpportunity | null> {
     try {
-      let amounts1: bigint[], amounts2: bigint[];
-      
       const provider = chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;
-      const router1Address = chainId === 42161 ? 
-        (sushiFirst ? this.SUSHI_ROUTER_ARB : this.UNI_V2_ROUTER_ARB) :
-        (sushiFirst ? this.SUSHI_ROUTER_OPT : this.UNI_V2_ROUTER_OPT);
-      const router2Address = chainId === 42161 ? 
-        (sushiFirst ? this.UNI_V2_ROUTER_ARB : this.SUSHI_ROUTER_ARB) :
-        (sushiFirst ? this.UNI_V2_ROUTER_OPT : this.SUSHI_ROUTER_OPT);
+      const uniRouter = chainId === 42161 ? this.arbUniV2Router : this.optUniV2Router;
+      const sushiRouter = chainId === 42161 ? this.arbSushiRouter : this.optSushiRouter;
       
-      const router1 = new ethers.Contract(router1Address, uniswapV2RouterABI, provider);
-      const router2 = new ethers.Contract(router2Address, uniswapV2RouterABI, provider);
+      const path = [tokenA, tokenB];
+      const reversePath = [tokenB, tokenA];
       
-      if (sushiFirst) {
-        amounts1 = await router1.getAmountsOut(amount, path);
-        amounts2 = await router2.getAmountsOut(
-          amounts1[amounts1.length - 1],
-          path.slice().reverse()
-        );
-      } else {
-        amounts1 = await router1.getAmountsOut(amount, path);
-        amounts2 = await router2.getAmountsOut(
-          amounts1[amounts1.length - 1],
-          path.slice().reverse()
-        );
-      }
+      // Get quotes from both routers
+      const router1 = sushiFirst ? sushiRouter : uniRouter;
+      const router2 = sushiFirst ? uniRouter : sushiRouter;
       
-      const finalAmount = amounts2[amounts2.length - 1];
-      const profit = finalAmount > amount ? finalAmount - amount : 0n;
+      const amounts1 = await router1.getAmountsOut(amount, path);
+      const amounts2 = await router2.getAmountsOut(amounts1[1], reversePath);
       
-      if (profit > this.MIN_PROFIT_THRESHOLD) {
-        const gasEstimate = await this.estimateGasCost(chainId);
-        const profitAfterGas = profit - gasEstimate;
-        
-        if (profitAfterGas > 0n) {
-          return {
-            tokenA: path[0],
-            tokenB: path[1],
-            amountIn: amount.toString(),
-            expectedProfit: profitAfterGas.toString(),
-            sushiFirst,
-            path: path,
-            gasEstimate: gasEstimate.toString(),
-            timestamp: Date.now(),
-            chainId
-          };
-        }
-      }
+      const finalAmount = amounts2[1];
+      const grossProfit = finalAmount > amount ? finalAmount - amount : 0n;
       
-      return null;
+      if (grossProfit === 0n) return null;
+      
+      // Calculate gas costs
+      const gasSettings = await this.estimateGasSettings(chainId);
+      const gasCost = gasSettings.gasLimit * gasSettings.maxFeePerGas;
+      
+      // Calculate net profit
+      const netProfit = grossProfit > gasCost ? grossProfit - gasCost : 0n;
+      
+      if (netProfit < this.MIN_PROFIT_THRESHOLD) return null;
+      
+      // Calculate spread and priority
+      const spread = Number(grossProfit * 10000n / amount) / 10000; // percentage
+      const priority = this.calculatePriority(netProfit, spread, chainId);
+      
+      const opportunity: ArbitrageOpportunity = {
+        id: `${tokenA}-${tokenB}-${amount}-${sushiFirst}-${chainId}-${Date.now()}`,
+        tokenA,
+        tokenB,
+        amountIn: amount.toString(),
+        expectedProfit: grossProfit.toString(),
+        netProfit: netProfit.toString(),
+        sushiFirst,
+        path,
+        gasEstimate: gasSettings.gasLimit.toString(),
+        gasCost: gasCost.toString(),
+        timestamp: Date.now(),
+        chainId,
+        priority,
+        spread,
+        slippage: 0.02 // 2% default slippage
+      };
+      
+      return opportunity;
       
     } catch (error) {
-      logger.error(chalk.red("Error checking arbitrage opportunity:"), error);
+      logger.error(chalk.red("Error checking dual router arbitrage"), error);
       return null;
     }
   }
   
-  async checkTriangularArbitrageOpportunity(
+  private async scanTriangularOpportunities(): Promise<ArbitrageOpportunity[]> {
+    const opportunities: ArbitrageOpportunity[] = [];
+    
+    if (!this.triangularEnabled) return opportunities;
+    
+    // ETH -> USDT -> USDC -> ETH
+    const triangularPath = [
+      this.TOKENS_ARB.WETH,
+      this.TOKENS_ARB.USDT,
+      this.TOKENS_ARB.USDC,
+      this.TOKENS_ARB.WETH
+    ];
+    
+    const amounts = [
+      ethers.parseEther("1"),
+      ethers.parseEther("5"),
+      ethers.parseEther("10")
+    ];
+    
+    for (const amount of amounts) {
+      const opp = await this.checkTriangularArbitrage(amount, triangularPath);
+      if (opp) opportunities.push(opp);
+    }
+    
+    return opportunities;
+  }
+  
+  private async checkTriangularArbitrage(
     amount: bigint,
     path: string[]
   ): Promise<ArbitrageOpportunity | null> {
     try {
-      // Simulate triangular arbitrage: A -> B -> C -> A
-      const router1 = new ethers.Contract(this.UNI_V2_ROUTER_ARB, uniswapV2RouterABI, this.arbitrumProvider);
-      const router2 = new ethers.Contract(this.SUSHI_ROUTER_ARB, sushiSwapRouterABI, this.arbitrumProvider);
+      // Step 1: WETH -> USDT (Uniswap)
+      const path1 = [path[0], path[1]];
+      const amounts1 = await this.arbUniV2Router.getAmountsOut(amount, path1);
+      const usdtAmount = amounts1[1];
       
-      // Step 1: A -> B
-      const pathAB = [path[0], path[1]];
-      const amounts1 = await router1.getAmountsOut(amount, pathAB);
-      const amountB = amounts1[amounts1.length - 1];
+      // Step 2: USDT -> USDC (SushiSwap)
+      const path2 = [path[1], path[2]];
+      const amounts2 = await this.arbSushiRouter.getAmountsOut(usdtAmount, path2);
+      const usdcAmount = amounts2[1];
       
-      // Step 2: B -> C
-      const pathBC = [path[1], path[2]];
-      const amounts2 = await router2.getAmountsOut(amountB, pathBC);
-      const amountC = amounts2[amounts2.length - 1];
+      // Step 3: USDC -> WETH (Uniswap)
+      const path3 = [path[2], path[3]];
+      const amounts3 = await this.arbUniV2Router.getAmountsOut(usdcAmount, path3);
+      const finalAmount = amounts3[1];
       
-      // Step 3: C -> A
-      const pathCA = [path[2], path[0]];
-      const amounts3 = await router1.getAmountsOut(amountC, pathCA);
-      const finalAmount = amounts3[amounts3.length - 1];
+      const grossProfit = finalAmount > amount ? finalAmount - amount : 0n;
       
-      const profit = finalAmount > amount ? finalAmount - amount : 0n;
+      if (grossProfit === 0n) return null;
       
-      if (profit > this.MIN_PROFIT_THRESHOLD) {
-        const gasEstimate = await this.estimateGasCost(42161);
-        const profitAfterGas = profit - gasEstimate;
-        
-        if (profitAfterGas > 0n) {
-          return {
-            tokenA: path[0],
-            tokenB: path[1],
-            amountIn: amount.toString(),
-            expectedProfit: profitAfterGas.toString(),
-            sushiFirst: false,
-            path: path,
-            gasEstimate: gasEstimate.toString(),
-            timestamp: Date.now(),
-            isTriangular: true,
-            chainId: 42161
-          };
-        }
-      }
+      // Calculate gas costs (higher for triangular)
+      const gasSettings = await this.estimateGasSettings(42161);
+      const gasCost = gasSettings.gasLimit * gasSettings.maxFeePerGas * 2n; // 2x for complexity
       
-      return null;
+      const netProfit = grossProfit > gasCost ? grossProfit - gasCost : 0n;
+      
+      if (netProfit < this.MIN_PROFIT_THRESHOLD) return null;
+      
+      const spread = Number(grossProfit * 10000n / amount) / 10000;
+      const priority = this.calculatePriority(netProfit, spread, 42161) + 1; // Higher priority
+      
+      const opportunity: ArbitrageOpportunity = {
+        id: `triangular-${amount}-${Date.now()}`,
+        tokenA: path[0],
+        tokenB: path[1],
+        amountIn: amount.toString(),
+        expectedProfit: grossProfit.toString(),
+        netProfit: netProfit.toString(),
+        sushiFirst: false,
+        path,
+        gasEstimate: (gasSettings.gasLimit * 2n).toString(),
+        gasCost: gasCost.toString(),
+        timestamp: Date.now(),
+        isTriangular: true,
+        chainId: 42161,
+        priority,
+        spread,
+        slippage: 0.03 // 3% slippage for triangular
+      };
+      
+      return opportunity;
       
     } catch (error) {
-      logger.error(chalk.red("Error checking triangular arbitrage opportunity:"), error);
+      logger.error(chalk.red("Error checking triangular arbitrage"), error);
       return null;
     }
   }
@@ -378,102 +587,170 @@ class ArbitrageBot {
   async scanCrossChainOpportunities(): Promise<CrossChainOpportunity[]> {
     const opportunities: CrossChainOpportunity[] = [];
     
+    if (!this.crossChainEnabled) return opportunities;
+    
     try {
-      const pairs = [
-        { tokenA: this.WETH_ARB, tokenB: this.USDT_ARB, tokenA_opt: this.WETH_OPT, tokenB_opt: this.USDT_OPT },
-        { tokenA: this.WBTC_ARB, tokenB: this.WETH_ARB, tokenA_opt: this.WBTC_OPT, tokenB_opt: this.WETH_OPT },
-      ];
+      // Check ETH/USDT spread
+      const ethUsdtSpread = await this.checkCrossChainSpread(
+        this.TOKENS_ARB.WETH,
+        this.TOKENS_ARB.USDT,
+        this.TOKENS_OPT.WETH,
+        this.TOKENS_OPT.USDT,
+        "ETH/USDT"
+      );
       
-      const amount = ethers.parseEther("1");
+      if (ethUsdtSpread) opportunities.push(ethUsdtSpread);
       
-      for (const pair of pairs) {
-        const arbPath = [pair.tokenA, pair.tokenB];
-        const optPath = [pair.tokenA_opt, pair.tokenB_opt];
-        
-        // Get prices on both chains
-        const arbRouter = new ethers.Contract(this.UNI_V2_ROUTER_ARB, uniswapV2RouterABI, this.arbitrumProvider);
-        const optRouter = new ethers.Contract(this.UNI_V2_ROUTER_OPT, uniswapV2RouterABI, this.optimismProvider);
-        
-        const arbAmounts = await arbRouter.getAmountsOut(amount, arbPath);
-        const optAmounts = await optRouter.getAmountsOut(amount, optPath);
-        
-        const arbPrice = arbAmounts[arbAmounts.length - 1];
-        const optPrice = optAmounts[optAmounts.length - 1];
-        
-        // Calculate spread
-        const spread = arbPrice > optPrice ? 
-          Number(arbPrice - optPrice) / Number(optPrice) :
-          Number(optPrice - arbPrice) / Number(arbPrice);
-        
-        if (spread >= this.MIN_CROSS_CHAIN_SPREAD) {
-          const bridgeCost = ethers.parseEther("0.005"); // Estimated bridge cost
-          const potentialProfit = arbPrice > optPrice ? 
-            (arbPrice - optPrice) - bridgeCost :
-            (optPrice - arbPrice) - bridgeCost;
-          
-          opportunities.push({
-            tokenA: pair.tokenA,
-            tokenB: pair.tokenB,
-            amountIn: amount.toString(),
-            arbitrumPrice: arbPrice.toString(),
-            optimismPrice: optPrice.toString(),
-            spread: (spread * 100).toFixed(4),
-            estimatedProfit: potentialProfit.toString(),
-            bridgeCost: bridgeCost.toString(),
-            timestamp: Date.now()
-          });
+      // Check WBTC/ETH spread
+      const wbtcEthSpread = await this.checkCrossChainSpread(
+        this.TOKENS_ARB.WBTC,
+        this.TOKENS_ARB.WETH,
+        this.TOKENS_OPT.WBTC,
+        this.TOKENS_OPT.WETH,
+        "WBTC/ETH"
+      );
+      
+      if (wbtcEthSpread) opportunities.push(wbtcEthSpread);
+      
+      // Log alerts for significant spreads
+      opportunities.forEach(opp => {
+        if (opp.alertLevel === 'critical') {
+          logger.warn(chalk.red(`🚨 CRITICAL CROSS-CHAIN SPREAD: ${opp.spread}%`), opp);
+        } else if (opp.alertLevel === 'warning') {
+          logger.info(chalk.yellow(`⚠️ Cross-chain spread detected: ${opp.spread}%`), opp);
         }
-      }
+      });
       
       return opportunities;
       
     } catch (error) {
-      logger.error(chalk.red("Error scanning cross-chain opportunities:"), error);
+      logger.error(chalk.red("Error scanning cross-chain opportunities"), error);
       return [];
     }
   }
-
-  async estimateGasCost(chainId: number = 42161): Promise<bigint> {
+  
+  private async checkCrossChainSpread(
+    tokenA_arb: string,
+    tokenB_arb: string,
+    tokenA_opt: string,
+    tokenB_opt: string,
+    pairName: string
+  ): Promise<CrossChainOpportunity | null> {
     try {
-      const provider = chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;
-      const gasPrice = await provider.getFeeData();
-      const baseFee = gasPrice.gasPrice || ethers.parseUnits("1", "gwei");
-      const priorityFee = this.MAX_PRIORITY_FEE;
+      const amount = ethers.parseEther("1");
       
-      return this.GAS_LIMIT * (baseFee + priorityFee);
+      // Get Arbitrum price
+      const arbPath = [tokenA_arb, tokenB_arb];
+      const arbAmounts = await this.arbUniV2Router.getAmountsOut(amount, arbPath);
+      const arbPrice = arbAmounts[1];
+      
+      // Get Optimism price
+      const optPath = [tokenA_opt, tokenB_opt];
+      const optAmounts = await this.optUniV2Router.getAmountsOut(amount, optPath);
+      const optPrice = optAmounts[1];
+      
+      // Calculate spread
+      const spread = arbPrice > optPrice ? 
+        Number((arbPrice - optPrice) * 10000n / optPrice) / 10000 :
+        Number((optPrice - arbPrice) * 10000n / arbPrice) / 10000;
+      
+      if (spread < this.MIN_CROSS_CHAIN_SPREAD) return null;
+      
+      // Calculate bridge cost and net profit
+      const bridgeCost = ethers.parseEther(process.env.BRIDGE_COST_ESTIMATE || "0.005");
+      const grossProfit = arbPrice > optPrice ? arbPrice - optPrice : optPrice - arbPrice;
+      const netProfit = grossProfit > bridgeCost ? grossProfit - bridgeCost : 0n;
+      
+      const alertLevel = spread >= this.CRITICAL_SPREAD_THRESHOLD ? 'critical' : 'warning';
+      
+      const opportunity: CrossChainOpportunity = {
+        id: `crosschain-${pairName}-${Date.now()}`,
+        tokenA: tokenA_arb,
+        tokenB: tokenB_arb,
+        amountIn: amount.toString(),
+        arbitrumPrice: arbPrice.toString(),
+        optimismPrice: optPrice.toString(),
+        spread: (spread * 100).toFixed(4),
+        estimatedProfit: grossProfit.toString(),
+        bridgeCost: bridgeCost.toString(),
+        netProfit: netProfit.toString(),
+        timestamp: Date.now(),
+        profitable: netProfit > 0n,
+        alertLevel
+      };
+      
+      return opportunity;
+      
     } catch (error) {
-      logger.error(chalk.red("Error estimating gas cost:"), error);
-      return ethers.parseEther("0.01"); // Default fallback
+      logger.error(chalk.red("Error checking cross-chain spread"), error);
+      return null;
     }
   }
-
+  
   async executeArbitrage(opportunity: ArbitrageOpportunity): Promise<boolean> {
     try {
       const now = Date.now();
       if (now - this.lastExecutionTime < this.COOLDOWN_PERIOD) {
-        logger.info(chalk.yellow("Cooldown period active, skipping execution"));
+        logger.info(chalk.yellow("⏱️ Cooldown period active"));
         return false;
       }
       
-      const chainId = opportunity.chainId || 42161;
-      const isArbitrum = chainId === 42161;
-      
-      logger.info(chalk.cyan(`🚀 Executing ${opportunity.isTriangular ? 'triangular ' : ''}arbitrage opportunity on ${isArbitrum ? 'Arbitrum' : 'Optimism'}:`));
-      logger.info(chalk.cyan(`  Amount: ${ethers.formatEther(opportunity.amountIn)} ETH`));
-      logger.info(chalk.cyan(`  Expected Profit: ${ethers.formatEther(opportunity.expectedProfit)} ETH`));
-      logger.info(chalk.cyan(`  Strategy: ${opportunity.isTriangular ? 'Triangular' : (opportunity.sushiFirst ? 'Sushi First' : 'Uniswap First')}`));
-      
-      const provider = isArbitrum ? this.arbitrumProvider : this.optimismProvider;
-      const wallet = isArbitrum ? this.wallet : this.optimismWallet;
-      const botContract = isArbitrum ? this.botContract : this.optimismBotContract;
-      
-      if (!botContract) {
-        logger.error(chalk.red(`Bot contract not deployed on ${isArbitrum ? 'Arbitrum' : 'Optimism'}`));
+      if (this.circuitBreakerTripped) {
+        logger.error(chalk.red("🚨 Circuit breaker tripped - execution disabled"));
         return false;
       }
       
-      // Create transaction
+      logger.info(chalk.cyan("🚀 Executing arbitrage opportunity"), {
+        id: opportunity.id,
+        profit: ethers.formatEther(opportunity.netProfit),
+        spread: opportunity.spread,
+        chain: opportunity.chainId === 42161 ? 'Arbitrum' : 'Optimism'
+      });
+      
+      if (this.simulationMode) {
+        logger.info(chalk.blue("🎯 SIMULATION MODE - No actual execution"));
+        return true;
+      }
+      
+      // Create MEV bundle
+      const bundle = await this.createMEVBundle(opportunity);
+      if (!bundle) return false;
+      
+      // Submit bundle to Flashbots
+      const success = await this.submitMEVBundle(bundle);
+      
+      if (success) {
+        this.lastExecutionTime = now;
+        this.executionCount++;
+        this.totalProfit += BigInt(opportunity.netProfit);
+        
+        logger.info(chalk.green("✅ Arbitrage executed successfully"), {
+          profit: ethers.formatEther(opportunity.netProfit),
+          totalProfit: ethers.formatEther(this.totalProfit),
+          executions: this.executionCount
+        });
+        
+        return true;
+      }
+      
+      return false;
+      
+    } catch (error) {
+      logger.error(chalk.red("❌ Failed to execute arbitrage"), error);
+      this.totalLoss += BigInt(opportunity.gasCost);
+      await this.checkCircuitBreaker();
+      return false;
+    }
+  }
+  
+  private async createMEVBundle(opportunity: ArbitrageOpportunity): Promise<MEVBundle | null> {
+    try {
+      const provider = opportunity.chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;
+      const botContract = opportunity.chainId === 42161 ? this.arbBotContract : this.optBotContract;
+      const signer = opportunity.chainId === 42161 ? this.executorSigner : this.optimismExecutor;
+      
       let tx;
+      
       if (opportunity.isTriangular) {
         tx = await botContract.executeTriangularArb.populateTransaction(
           opportunity.tokenA,
@@ -489,181 +766,4 @@ class ArbitrageBot {
           opportunity.sushiFirst,
           opportunity.expectedProfit
         );
-      }
-      
-      // Set gas parameters
-      const feeData = await provider.getFeeData();
-      tx.gasLimit = this.GAS_LIMIT;
-      tx.maxFeePerGas = feeData.gasPrice || ethers.parseUnits("2", "gwei");
-      tx.maxPriorityFeePerGas = this.MAX_PRIORITY_FEE;
-      tx.nonce = await provider.getTransactionCount(wallet.address);
-      
-      // Submit as MEV bundle (Arbitrum only for now)
-      if (isArbitrum) {
-        const bundleSuccess = await this.submitMevBundle([tx]);
-        
-        if (bundleSuccess) {
-          this.lastExecutionTime = now;
-          logger.info(chalk.green("✓ Arbitrage executed successfully via MEV bundle"));
-          return true;
-        } else {
-          logger.warn(chalk.yellow("MEV bundle failed, trying direct transaction"));
-        }
-      }
-      
-      // Fallback to direct transaction
-      const signedTx = await wallet.signTransaction(tx);
-      const txResponse = await provider.sendTransaction(signedTx);
-      
-      logger.info(chalk.blue(`Transaction hash: ${txResponse.hash}`));
-      
-      const receipt = await txResponse.wait();
-      if (receipt?.status === 1) {
-        this.lastExecutionTime = now;
-        logger.info(chalk.green(`✓ Arbitrage executed successfully via direct transaction on ${isArbitrum ? 'Arbitrum' : 'Optimism'}`));
-        return true;
-      } else {
-        logger.error(chalk.red("Transaction failed"));
-        return false;
-      }
-      
-    } catch (error) {
-      logger.error(chalk.red("Failed to execute arbitrage:"), error);
-      return false;
-    }
-  }
-
-  async submitMevBundle(transactions: any[]): Promise<boolean> {
-    try {
-      const blockNumber = await this.provider.getBlockNumber();
-      const targetBlockNumber = blockNumber + 1;
-      
-      // Create bundle
-      const bundle = {
-        transactions: transactions,
-        blockNumber: targetBlockNumber,
-        minTimestamp: Math.floor(Date.now() / 1000),
-        maxTimestamp: Math.floor(Date.now() / 1000) + 60
-      };
-      
-      // Submit to MEV-Share
-      const simulation = await this.mevShareClient.sendBundle(bundle);
-      
-      if (simulation.success) {
-        logger.info(chalk.green("✓ MEV bundle submitted successfully"));
-        
-        // Wait for inclusion
-        const result = await this.mevShareClient.getBundleStatus(simulation.bundleHash);
-        return result.status === "included";
-      } else {
-        logger.warn(chalk.yellow("MEV bundle simulation failed"));
-        return false;
-      }
-      
-    } catch (error) {
-      logger.error(chalk.red("Failed to submit MEV bundle:"), error);
-      return false;
-    }
-  }
-
-  async monitorBlock() {
-    if (this.isRunning) {
-      return;
-    }
-    
-    this.isRunning = true;
-    
-    try {
-      logger.info(chalk.blue("🔍 Scanning for arbitrage opportunities..."));
-      
-      const opportunities = await this.scanForOpportunities();
-      
-      if (opportunities.length > 0) {
-        logger.info(chalk.green(`Found ${opportunities.length} opportunities`));
-        
-        // Execute the most profitable opportunity
-        const bestOpportunity = opportunities[0];
-        const success = await this.executeArbitrage(bestOpportunity);
-        
-        if (success) {
-          logger.info(chalk.green("💰 Arbitrage executed successfully!"));
-        }
-      } else {
-        logger.info(chalk.gray("No profitable opportunities found"));
-      }
-      
-    } catch (error) {
-      logger.error(chalk.red("Error in monitor block:"), error);
-    } finally {
-      this.isRunning = false;
-    }
-  }
-
-  async start() {
-    logger.info(chalk.green("🤖 Starting Multi-Chain Arbitrage Bot..."));
-    
-    // Monitor every 12 seconds (block time)
-    cron.schedule("*/12 * * * * *", async () => {
-      await this.monitorBlock();
-    });
-    
-    // Monitor new blocks on both chains
-    this.arbitrumProvider.on("block", async (blockNumber) => {
-      logger.info(chalk.blue(`📦 Arbitrum block: ${blockNumber}`));
-      await this.monitorBlock();
-    });
-    
-    if (this.crossChainMonitoringActive) {
-      this.optimismProvider.on("block", async (blockNumber) => {
-        logger.info(chalk.blue(`📦 Optimism block: ${blockNumber}`));
-        await this.monitorBlock();
-      });
-    }
-    
-    logger.info(chalk.green("✓ Multi-chain bot started successfully"));
-  }
-
-  async stop() {
-    logger.info(chalk.yellow("🛑 Stopping Multi-Chain Arbitrage Bot..."));
-    this.arbitrumProvider.removeAllListeners();
-    this.optimismProvider.removeAllListeners();
-    logger.info(chalk.yellow("✓ Multi-chain bot stopped"));
-  }
-}
-
-async function main() {
-  const bot = new ArbitrageBot();
-  
-  try {
-    await bot.initialize();
-    await bot.start();
-    
-    // Graceful shutdown
-    process.on("SIGINT", async () => {
-      await bot.stop();
-      process.exit(0);
-    });
-    
-    process.on("SIGTERM", async () => {
-      await bot.stop();
-      process.exit(0);
-    });
-    
-  } catch (error) {
-    logger.error(chalk.red("Failed to start bot:"), error);
-    process.exit(1);
-  }
-}
-
-// Handle uncaught exceptions
-process.on("uncaughtException", (error) => {
-  logger.error(chalk.red("Uncaught exception:"), error);
-  process.exit(1);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-  logger.error(chalk.red("Unhandled rejection at:"), promise, "reason:", reason);
-  process.exit(1);
-});
-
-main();
+      }\n      \n      // Set gas parameters with dynamic pricing\n      const gasSettings = await this.estimateGasSettings(opportunity.chainId);\n      tx.gasLimit = gasSettings.gasLimit;\n      tx.maxFeePerGas = gasSettings.maxFeePerGas;\n      tx.maxPriorityFeePerGas = gasSettings.maxPriorityFeePerGas;\n      tx.nonce = await provider.getTransactionCount(signer.address);\n      \n      const currentBlock = await provider.getBlockNumber();\n      const targetBlockNumber = currentBlock + 1;\n      \n      const bundleTransaction: FlashbotsBundleTransaction = {\n        signer: signer,\n        transaction: tx\n      };\n      \n      const bundle: MEVBundle = {\n        transactions: [bundleTransaction],\n        targetBlockNumber\n      };\n      \n      return bundle;\n      \n    } catch (error) {\n      logger.error(chalk.red(\"Error creating MEV bundle\"), error);\n      return null;\n    }\n  }\n  \n  private async submitMEVBundle(bundle: MEVBundle): Promise<boolean> {\n    try {\n      // Simulate bundle first\n      const simulation = await this.flashbotsProvider.simulate(\n        bundle.transactions,\n        bundle.targetBlockNumber\n      );\n      \n      if (simulation.error) {\n        logger.error(chalk.red(\"Bundle simulation failed\"), simulation.error);\n        return false;\n      }\n      \n      bundle.simulation = simulation;\n      bundle.gasUsed = simulation.totalGasUsed?.toString();\n      \n      logger.info(chalk.blue(\"📊 Bundle simulation successful\"), {\n        gasUsed: simulation.totalGasUsed?.toString(),\n        profit: simulation.coinbaseDiff?.toString()\n      });\n      \n      // Submit bundle\n      const bundleSubmission = await this.flashbotsProvider.sendBundle(\n        bundle.transactions,\n        bundle.targetBlockNumber\n      );\n      \n      if (bundleSubmission.error) {\n        logger.error(chalk.red(\"Bundle submission failed\"), bundleSubmission.error);\n        return false;\n      }\n      \n      bundle.bundleHash = bundleSubmission.bundleHash;\n      \n      // Wait for bundle resolution\n      const resolution = await bundleSubmission.wait();\n      \n      if (resolution === FlashbotsBundleResolution.BundleIncluded) {\n        logger.info(chalk.green(\"✅ Bundle included in block\"), {\n          bundleHash: bundle.bundleHash,\n          blockNumber: bundle.targetBlockNumber\n        });\n        return true;\n      } else if (resolution === FlashbotsBundleResolution.BlockPassedWithoutInclusion) {\n        logger.warn(chalk.yellow(\"⚠️ Bundle not included - block passed\"));\n        return false;\n      } else {\n        logger.warn(chalk.yellow(\"⚠️ Bundle resolution unknown\"));\n        return false;\n      }\n      \n    } catch (error) {\n      logger.error(chalk.red(\"Error submitting MEV bundle\"), error);\n      return false;\n    }\n  }\n  \n  private async estimateGasSettings(chainId: number): Promise<GasSettings> {\n    try {\n      const provider = chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;\n      const feeData = await provider.getFeeData();\n      \n      const baseFee = feeData.gasPrice || ethers.parseUnits(\"1\", \"gwei\");\n      const maxPriorityFee = this.MAX_PRIORITY_FEE;\n      \n      // Dynamic gas pricing based on network congestion\n      const congestionMultiplier = await this.getNetworkCongestionMultiplier(chainId);\n      const adjustedBaseFee = baseFee * BigInt(Math.floor(congestionMultiplier * 100)) / 100n;\n      \n      return {\n        gasLimit: this.GAS_LIMIT,\n        maxFeePerGas: adjustedBaseFee + maxPriorityFee,\n        maxPriorityFeePerGas: maxPriorityFee,\n        baseFee: adjustedBaseFee\n      };\n      \n    } catch (error) {\n      logger.error(chalk.red(\"Error estimating gas settings\"), error);\n      \n      // Fallback values\n      return {\n        gasLimit: this.GAS_LIMIT,\n        maxFeePerGas: ethers.parseUnits(\"2\", \"gwei\"),\n        maxPriorityFeePerGas: this.MAX_PRIORITY_FEE,\n        baseFee: ethers.parseUnits(\"1\", \"gwei\")\n      };\n    }\n  }\n  \n  private async getNetworkCongestionMultiplier(chainId: number): Promise<number> {\n    try {\n      const provider = chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;\n      const blockNumber = await provider.getBlockNumber();\n      const block = await provider.getBlock(blockNumber);\n      \n      if (!block) return 1.0;\n      \n      // Simple congestion metric based on gas usage\n      const gasUsedPercentage = Number(block.gasUsed * 100n / block.gasLimit);\n      \n      if (gasUsedPercentage > 90) return 1.5;\n      if (gasUsedPercentage > 70) return 1.3;\n      if (gasUsedPercentage > 50) return 1.1;\n      \n      return 1.0;\n      \n    } catch (error) {\n      logger.error(chalk.red(\"Error calculating congestion multiplier\"), error);\n      return 1.0;\n    }\n  }\n  \n  private calculatePriority(netProfit: bigint, spread: number, chainId: number): number {\n    let priority = 0;\n    \n    // Profit-based priority\n    const profitEth = Number(ethers.formatEther(netProfit));\n    if (profitEth > 0.1) priority += 5;\n    else if (profitEth > 0.05) priority += 3;\n    else if (profitEth > 0.01) priority += 1;\n    \n    // Spread-based priority\n    if (spread > 0.01) priority += 3; // >1%\n    else if (spread > 0.005) priority += 2; // >0.5%\n    else if (spread > 0.002) priority += 1; // >0.2%\n    \n    // Chain-based priority (Arbitrum preferred for MEV)\n    if (chainId === 42161) priority += 1;\n    \n    return priority;\n  }\n  \n  private async checkCircuitBreaker(): Promise<void> {\n    const threshold = ethers.parseEther(process.env.CIRCUIT_BREAKER_THRESHOLD || \"10\");\n    \n    if (this.totalLoss > threshold) {\n      this.circuitBreakerTripped = true;\n      logger.error(chalk.red(\"🚨 CIRCUIT BREAKER TRIPPED\"), {\n        totalLoss: ethers.formatEther(this.totalLoss),\n        threshold: ethers.formatEther(threshold)\n      });\n    }\n  }\n  \n  private getOptimismToken(arbitrumToken: string): string {\n    const mapping: { [key: string]: string } = {\n      [this.TOKENS_ARB.WETH]: this.TOKENS_OPT.WETH,\n      [this.TOKENS_ARB.USDC]: this.TOKENS_OPT.USDC,\n      [this.TOKENS_ARB.USDT]: this.TOKENS_OPT.USDT,\n      [this.TOKENS_ARB.WBTC]: this.TOKENS_OPT.WBTC\n    };\n    \n    return mapping[arbitrumToken] || arbitrumToken;\n  }\n  \n  async monitorAndExecute(): Promise<void> {\n    if (this.isRunning) return;\n    \n    this.isRunning = true;\n    \n    try {\n      logger.info(chalk.blue(\"🔍 Scanning for opportunities...\"));\n      \n      // Scan for arbitrage opportunities\n      const opportunities = await this.scanForArbitrageOpportunities();\n      \n      // Scan for cross-chain opportunities\n      const crossChainOpportunities = await this.scanCrossChainOpportunities();\n      \n      if (opportunities.length > 0) {\n        logger.info(chalk.green(`Found ${opportunities.length} arbitrage opportunities`));\n        \n        // Execute the highest priority opportunity\n        const bestOpportunity = opportunities[0];\n        const success = await this.executeArbitrage(bestOpportunity);\n        \n        if (success) {\n          logger.info(chalk.green(\"💰 Arbitrage executed successfully!\"));\n        }\n      }\n      \n      if (crossChainOpportunities.length > 0) {\n        logger.info(chalk.yellow(`📊 ${crossChainOpportunities.length} cross-chain opportunities detected`));\n      }\n      \n      if (opportunities.length === 0 && crossChainOpportunities.length === 0) {\n        logger.info(chalk.gray(\"No profitable opportunities found\"));\n      }\n      \n    } catch (error) {\n      logger.error(chalk.red(\"Error in monitoring cycle\"), error);\n    } finally {\n      this.isRunning = false;\n    }\n  }\n  \n  async start(): Promise<void> {\n    logger.info(chalk.green(\"🤖 Starting Enhanced MEV Arbitrage Bot...\"));\n    \n    // Monitor every 5 seconds\n    cron.schedule(\"*/5 * * * * *\", async () => {\n      await this.monitorAndExecute();\n    });\n    \n    // Monitor new blocks on Arbitrum\n    this.arbitrumProvider.on(\"block\", async (blockNumber) => {\n      logger.info(chalk.blue(`📦 Arbitrum block: ${blockNumber}`));\n      await this.monitorAndExecute();\n    });\n    \n    // Monitor new blocks on Optimism (if enabled)\n    if (this.crossChainEnabled) {\n      this.optimismProvider.on(\"block\", async (blockNumber) => {\n        logger.info(chalk.blue(`📦 Optimism block: ${blockNumber}`));\n        await this.monitorAndExecute();\n      });\n    }\n    \n    // Periodic cross-chain monitoring\n    if (this.crossChainEnabled) {\n      setInterval(async () => {\n        await this.scanCrossChainOpportunities();\n      }, this.PRICE_UPDATE_INTERVAL);\n    }\n    \n    logger.info(chalk.green(\"✅ Enhanced MEV bot started successfully\"));\n  }\n  \n  async stop(): Promise<void> {\n    logger.info(chalk.yellow(\"🛑 Stopping Enhanced MEV Bot...\"));\n    \n    this.arbitrumProvider.removeAllListeners();\n    if (this.crossChainEnabled) {\n      this.optimismProvider.removeAllListeners();\n    }\n    \n    // Log final statistics\n    logger.info(chalk.blue(\"📊 Final Statistics\"), {\n      totalProfit: ethers.formatEther(this.totalProfit),\n      totalLoss: ethers.formatEther(this.totalLoss),\n      netProfit: ethers.formatEther(this.totalProfit - this.totalLoss),\n      executionCount: this.executionCount,\n      circuitBreakerTripped: this.circuitBreakerTripped\n    });\n    \n    logger.info(chalk.yellow(\"✅ Enhanced MEV bot stopped\"));\n  }\n}\n\n// Main execution function\nasync function main(): Promise<void> {\n  const bot = new EnhancedMEVBot();\n  \n  try {\n    await bot.initialize();\n    await bot.start();\n    \n    // Graceful shutdown handlers\n    process.on(\"SIGINT\", async () => {\n      console.log(\"\\n\");\n      logger.info(chalk.yellow(\"Received SIGINT, shutting down gracefully...\"));\n      await bot.stop();\n      process.exit(0);\n    });\n    \n    process.on(\"SIGTERM\", async () => {\n      logger.info(chalk.yellow(\"Received SIGTERM, shutting down gracefully...\"));\n      await bot.stop();\n      process.exit(0);\n    });\n    \n  } catch (error) {\n    logger.error(chalk.red(\"Failed to start Enhanced MEV Bot\"), error);\n    process.exit(1);\n  }\n}\n\n// Global error handlers\nprocess.on(\"uncaughtException\", (error) => {\n  logger.error(chalk.red(\"Uncaught Exception\"), error);\n  process.exit(1);\n});\n\nprocess.on(\"unhandledRejection\", (reason, promise) => {\n  logger.error(chalk.red(\"Unhandled Rejection\"), { reason, promise });\n  process.exit(1);\n});\n\n// Start the bot\nif (require.main === module) {\n  main();\n}\n\nexport { EnhancedMEVBot };"
