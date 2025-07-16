@@ -1,0 +1,17 @@
+arb-bot/
+├── contracts/
+│   └── FlashArbBotBalancer.sol
+├── scripts/
+│   ├── deploy.ts
+│   └── run-bot.ts
+├── test/
+│   ├── FlashLoan.test.ts
+│   └── Integration.test.ts
+├── abi/
+│   ├── BalancerVault.json
+│   ├── UniswapV2Router.json
+│   └── SushiSwapRouter.json
+├── hardhat.config.ts
+├── package.json
+├── tsconfig.json
+└── .env.example
