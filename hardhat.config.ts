@@ -1,5 +1,5 @@
 import { HardhatUserConfig } from "hardhat/config";
-import "@nomiclabs/hardhat-ethers";
+import "@nomicfoundation/hardhat-ethers";
 import "hardhat-gas-reporter";
 import "solidity-coverage";
 import "dotenv/config";
@@ -15,6 +15,7 @@ const config: HardhatUserConfig = {
       viaIR: true
     }
   },
+  defaultNetwork: "hardhat",
   networks: {
     arbitrum: {
       url: process.env.ARB_RPC!,
@@ -27,6 +28,20 @@ const config: HardhatUserConfig = {
       url: process.env.OPT_RPC!,
       accounts: [process.env.PRIVATE_KEY!],
       chainId: 10,
+      gasPrice: 1000000000, // 1 gwei
+      timeout: 60000
+    },
+    arbitrum_sepolia: {
+      url: process.env.ARB_SEPOLIA_RPC || "https://sepolia-rollup.arbitrum.io/rpc",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 421614,
+      gasPrice: 100000000, // 0.1 gwei
+      timeout: 60000
+    },
+    optimism_sepolia: {
+      url: process.env.OPT_SEPOLIA_RPC || "https://sepolia.optimism.io",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 11155420,
       gasPrice: 1000000000, // 1 gwei
       timeout: 60000
     },
@@ -45,12 +60,13 @@ const config: HardhatUserConfig = {
       timeout: 60000
     },
     hardhat_arbitrum: {
+      url: "http://127.0.0.1:8545",
       forking: {
-        url: process.env.ARB_RPC!,
+        url: process.env.ARB_RPC || "https://arb1.arbitrum.io/rpc",
         blockNumber: process.env.FORK_BLOCK
           ? parseInt(process.env.FORK_BLOCK)
           : undefined,
-        enabled: true
+        enabled: !!process.env.ARB_RPC
       },
       chainId: 31337,
       gas: 30000000,
@@ -58,12 +74,13 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true
     },
     hardhat_optimism: {
+      url: "http://127.0.0.1:8545",
       forking: {
-        url: process.env.OPT_RPC!,
+        url: process.env.OPT_RPC || "https://mainnet.optimism.io",
         blockNumber: process.env.FORK_BLOCK_OPT
           ? parseInt(process.env.FORK_BLOCK_OPT)
           : undefined,
-        enabled: true
+        enabled: !!process.env.OPT_RPC
       },
       chainId: 31337,
       gas: 30000000,
@@ -88,17 +105,27 @@ const config: HardhatUserConfig = {
     apiKey: {
       arbitrumOne: process.env.ARBISCAN_API_KEY || "",
       optimisticEthereum: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || "",
-      mainnet: process.env.ETHERSCAN_API_KEY || ""
+      mainnet: process.env.ETHERSCAN_API_KEY || "",
+      arbitrumSepolia: process.env.ARBISCAN_API_KEY || "",
+      optimismSepolia: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || ""
     }
   },
   mocha: {
     timeout: 300000, // 5 minutes
     slow: 30000      // 30 seconds
   },
+  paths: {
+    sources: "./contracts",
+    tests: "./test",
+    cache: "./cache",
+    artifacts: "./artifacts"
+  },
   typechain: {
     outDir: "typechain",
     target: "ethers-v6"
   }
 };
+
+import "./tasks/deploy-arb";
 
 export default config;

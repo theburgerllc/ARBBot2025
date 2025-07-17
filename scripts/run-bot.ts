@@ -63,6 +63,8 @@ interface ArbitrageOpportunity {
   priority: number;
   spread: number;
   slippage: number;
+  flashLoanProvider: 'BALANCER' | 'AAVE';
+  flashLoanFee: string;
 }
 
 interface CrossChainOpportunity {
@@ -126,6 +128,8 @@ class EnhancedMEVBot {
   private optBotContract: ethers.Contract;
   private arbBalancerVault: ethers.Contract;
   private optBalancerVault: ethers.Contract;
+  private arbAavePool: ethers.Contract;
+  private optAavePool: ethers.Contract;
   
   // Router contracts - Arbitrum
   private arbUniV2Router: ethers.Contract;
@@ -164,6 +168,12 @@ class EnhancedMEVBot {
     UNISWAP_V2: "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2",
     SUSHISWAP: "0x2ABf469074dc0b54d793850807E6eb5Faf2625b1",
     UNISWAP_V3_QUOTER: "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
+  };
+  
+  // Aave V3 Pool addresses
+  private readonly AAVE_POOLS = {
+    ARBITRUM: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    OPTIMISM: "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
   };
   
   // Trading pairs configuration
@@ -304,6 +314,17 @@ class EnhancedMEVBot {
       this.executorSigner
     );
     
+    // Aave V3 Pool contracts
+    this.arbAavePool = new ethers.Contract(
+      this.AAVE_POOLS.ARBITRUM,
+      [
+        "function getReserveData(address asset) external view returns (uint256, uint128, uint128, uint128, uint128, uint128, uint40, uint16, address, address, address, address, uint128, uint128, uint128)",
+        "function FLASHLOAN_PREMIUM_TOTAL() external view returns (uint128)",
+        "function flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes calldata params, uint16 referralCode) external"
+      ],
+      this.executorSigner
+    );
+    
     // Optimism contracts (if cross-chain enabled)
     if (this.crossChainEnabled && process.env.OPT_BOT_CONTRACT_ADDRESS) {
       this.optBotContract = new ethers.Contract(
@@ -335,9 +356,142 @@ class EnhancedMEVBot {
         uniswapV3QuoterABI,
         this.optimismExecutor
       );
+      
+      this.optAavePool = new ethers.Contract(
+        this.AAVE_POOLS.OPTIMISM,
+        [
+          "function getReserveData(address asset) external view returns (uint256, uint128, uint128, uint128, uint128, uint128, uint40, uint16, address, address, address, address, uint128, uint128, uint128)",
+          "function FLASHLOAN_PREMIUM_TOTAL() external view returns (uint128)",
+          "function flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes calldata params, uint16 referralCode) external"
+        ],
+        this.optimismExecutor
+      );
     }
     
     logger.info(chalk.green("✅ Contracts initialized"));
+  }
+  
+  private async checkAaveLiquidity(asset: string, amount: bigint, chainId: number): Promise<{
+    available: boolean;
+    utilizationRate: number;
+    fee: bigint;
+    maxLoan: bigint;
+  }> {
+    const aavePool = chainId === 42161 ? this.arbAavePool : this.optAavePool;
+    
+    const reserveData = await aavePool.getReserveData(asset);
+    const totalLiquidity = reserveData[1];
+    const utilizationRate = Number(reserveData[4]) / 10000;
+    
+    const flashLoanPremium = await aavePool.FLASHLOAN_PREMIUM_TOTAL();
+    const fee = (amount * BigInt(flashLoanPremium)) / 10000n;
+    
+    return {
+      available: totalLiquidity >= amount,
+      utilizationRate,
+      fee,
+      maxLoan: totalLiquidity
+    };
+  }
+
+  private async checkBalancerLiquidity(asset: string, amount: bigint, chainId: number): Promise<{
+    available: boolean;
+    fee: bigint;
+    maxLoan: bigint;
+  }> {
+    const vault = chainId === 42161 ? this.arbBalancerVault : this.optBalancerVault;
+    
+    const maxLoan = await vault.maxFlashLoan(asset);
+    
+    return {
+      available: maxLoan >= amount,
+      fee: 0n,
+      maxLoan
+    };
+  }
+
+  private async selectOptimalFlashLoanProvider(
+    asset: string, 
+    amount: bigint, 
+    chainId: number
+  ): Promise<{
+    provider: 'BALANCER' | 'AAVE';
+    fee: bigint;
+    score: number;
+  }> {
+    const [aaveData, balancerData] = await Promise.all([
+      this.checkAaveLiquidity(asset, amount, chainId),
+      this.checkBalancerLiquidity(asset, amount, chainId)
+    ]);
+    
+    const aaveScore = this.calculateProviderScore(aaveData, amount);
+    const balancerScore = this.calculateProviderScore(balancerData, amount);
+    
+    if (balancerScore > aaveScore && balancerData.available) {
+      return {
+        provider: 'BALANCER',
+        fee: balancerData.fee,
+        score: balancerScore
+      };
+    } else if (aaveData.available) {
+      return {
+        provider: 'AAVE',
+        fee: aaveData.fee,
+        score: aaveScore
+      };
+    } else {
+      throw new Error('No flash loan provider available');
+    }
+  }
+
+  private calculateProviderScore(liquidityData: any, amount: bigint): number {
+    let score = 0;
+    
+    if (liquidityData.available) {
+      score += 40;
+    }
+    
+    const feePercent = Number(liquidityData.fee) / Number(amount);
+    score += Math.max(0, 30 - (feePercent * 30000));
+    
+    const liquidityRatio = Number(liquidityData.maxLoan) / Number(amount);
+    score += Math.min(20, liquidityRatio * 5);
+    
+    if (liquidityData.utilizationRate !== undefined) {
+      score += Math.max(0, 10 - (liquidityData.utilizationRate * 10));
+    } else {
+      score += 10;
+    }
+    
+    return Math.min(100, Math.max(0, score));
+  }
+
+  private async monitorLiquidityHealth(): Promise<void> {
+    const assets = [
+      this.TOKENS_ARB.WETH,
+      this.TOKENS_ARB.USDC,
+      this.TOKENS_ARB.USDT,
+      this.TOKENS_ARB.WBTC
+    ];
+    
+    for (const asset of assets) {
+      try {
+        const [aaveData, balancerData] = await Promise.all([
+          this.checkAaveLiquidity(asset, ethers.parseEther("10"), 42161),
+          this.checkBalancerLiquidity(asset, ethers.parseEther("10"), 42161)
+        ]);
+        
+        if (aaveData.utilizationRate > 0.8) {
+          logger.warn(chalk.yellow(`High Aave utilization for ${asset}: ${aaveData.utilizationRate * 100}%`));
+        }
+        
+        if (!balancerData.available) {
+          logger.warn(chalk.yellow(`Balancer liquidity low for ${asset}`));
+        }
+      } catch (error) {
+        logger.error(chalk.red(`Error monitoring liquidity for ${asset}`), error);
+      }
+    }
   }
   
   async initialize(): Promise<void> {
@@ -569,7 +723,7 @@ class EnhancedMEVBot {
       totalLoss: ethers.formatEther(this.totalLoss),
       netProfit: ethers.formatEther(this.totalProfit - this.totalLoss),
       executionCount: this.executionCount,
-      circuitBreakerTripped: this.circuitBreakerTriipped
+      circuitBreakerTripped: this.circuitBreakerTripped
     });
     
     logger.info(chalk.yellow("✅ Enhanced MEV bot stopped"));

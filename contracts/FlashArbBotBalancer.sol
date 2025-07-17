@@ -13,6 +13,55 @@ interface IBalancerVault {
         uint256[] calldata amounts,
         bytes calldata userData
     ) external;
+    
+    function maxFlashLoan(address token) external view returns (uint256);
+}
+
+interface IPoolAddressesProvider {
+    function getPool() external view returns (address);
+}
+
+interface IPool {
+    function flashLoanSimple(
+        address receiverAddress,
+        address asset,
+        uint256 amount,
+        bytes calldata params,
+        uint16 referralCode
+    ) external;
+    
+    function getReserveData(address asset)
+        external
+        view
+        returns (
+            uint256 configuration,
+            uint128 liquidityIndex,
+            uint128 currentLiquidityRate,
+            uint128 variableBorrowIndex,
+            uint128 currentVariableBorrowRate,
+            uint128 currentStableBorrowRate,
+            uint40 lastUpdateTimestamp,
+            uint16 id,
+            address aTokenAddress,
+            address stableDebtTokenAddress,
+            address variableDebtTokenAddress,
+            address interestRateStrategyAddress,
+            uint128 accruedToTreasury,
+            uint128 unbacked,
+            uint128 isolationModeTotalDebt
+        );
+    
+    function FLASHLOAN_PREMIUM_TOTAL() external view returns (uint128);
+}
+
+interface IFlashLoanSimpleReceiver {
+    function executeOperation(
+        address asset,
+        uint256 amount,
+        uint256 premium,
+        address initiator,
+        bytes calldata params
+    ) external returns (bool);
 }
 
 interface IUniswapV2Router02 {
@@ -51,8 +100,9 @@ interface IAggregatorV3 {
         );
 }
 
-contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
+contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSimpleReceiver {
     IBalancerVault public vault;
+    IPool public aavePool;
     IUniswapV2Router02 public sushiRouter;
     IUniswapV2Router02 public uniRouter;
     IUniswapV3Quoter public uniV3Quoter;
@@ -68,12 +118,16 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
     address public constant WBTC = 0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f;
     
     // Router addresses - Arbitrum
-    address public constant UNI_V2_ROUTER_NEW = 0x4752ba5DBc23f44D87826276BF6Fd6b1C372ad24;
+    address public constant UNI_V2_ROUTER_NEW = 0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24;
     address public constant SUSHI_ROUTER_NEW = 0xf2614A233c7C3e7f08b1F887Ba133a13f1eb2c55;
     
     // Router addresses - Optimism
     address public constant UNI_V2_ROUTER_OPT = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2;
     address public constant SUSHI_ROUTER_OPT = 0x2ABf469074dc0b54d793850807E6eb5Faf2625b1;
+    
+    // Aave V3 Pool addresses
+    address public constant AAVE_POOL_ARBITRUM = 0x794a61358D6845594F94dc1DB02A252b5b4814aD;
+    address public constant AAVE_POOL_OPTIMISM = 0x794a61358D6845594F94dc1DB02A252b5b4814aD;
     
     // Network identification
     uint256 public currentChainId;
@@ -87,6 +141,10 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
     
     mapping(address => address) public priceFeeds;
     mapping(address => bool) public authorizedCallers;
+    
+    enum FlashLoanProvider { BALANCER, AAVE }
+    
+    event FlashLoanProviderSelected(FlashLoanProvider provider, address asset, uint256 amount);
     
     event ArbitrageExecuted(
         address indexed asset,
@@ -136,9 +194,11 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
         if (isArbitrum) {
             uniV2RouterNew = IUniswapV2Router02(UNI_V2_ROUTER_NEW);
             sushiRouterNew = IUniswapV2Router02(SUSHI_ROUTER_NEW);
+            aavePool = IPool(AAVE_POOL_ARBITRUM);
         } else if (isOptimism) {
             uniV2RouterNew = IUniswapV2Router02(UNI_V2_ROUTER_OPT);
             sushiRouterNew = IUniswapV2Router02(SUSHI_ROUTER_OPT);
+            aavePool = IPool(AAVE_POOL_OPTIMISM);
         }
     }
 
@@ -171,13 +231,13 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
         require(amount > 0, "Amount must be positive");
         require(expectedProfit > 0, "Expected profit must be positive");
         
-        address[] memory assets = new address[](1);
-        assets[0] = asset;
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = amount;
+        FlashLoanProvider provider = _selectOptimalProvider(asset, amount);
         
-        bytes memory userData = abi.encode(path, sushiFirst, expectedProfit, false); // false = not triangular
-        vault.flashLoan(address(this), assets, amounts, userData);
+        if (provider == FlashLoanProvider.BALANCER) {
+            _executeBalancerFlashLoan(asset, amount, path, sushiFirst, expectedProfit, false);
+        } else {
+            _executeAaveFlashLoan(asset, amount, path, sushiFirst, expectedProfit, false);
+        }
     }
     
     function executeTriangularArb(
@@ -191,13 +251,13 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
         require(amount > 0, "Amount must be positive");
         require(expectedProfit > 0, "Expected profit must be positive");
         
-        address[] memory assets = new address[](1);
-        assets[0] = asset;
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = amount;
+        FlashLoanProvider provider = _selectOptimalProvider(asset, amount);
         
-        bytes memory userData = abi.encode(path, false, expectedProfit, true); // true = triangular
-        vault.flashLoan(address(this), assets, amounts, userData);
+        if (provider == FlashLoanProvider.BALANCER) {
+            _executeBalancerFlashLoan(asset, amount, path, false, expectedProfit, true);
+        } else {
+            _executeAaveFlashLoan(asset, amount, path, false, expectedProfit, true);
+        }
     }
 
     function receiveFlashLoan(
@@ -386,6 +446,97 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
         }
         return true;
     }
+    
+    function _selectOptimalProvider(address asset, uint256 amount) internal view returns (FlashLoanProvider) {
+        uint256 balancerMaxLoan = vault.maxFlashLoan(asset);
+        
+        if (balancerMaxLoan >= amount) {
+            return FlashLoanProvider.BALANCER;
+        }
+        
+        return FlashLoanProvider.AAVE;
+    }
+    
+    function _executeBalancerFlashLoan(
+        address asset,
+        uint256 amount,
+        address[] memory path,
+        bool sushiFirst,
+        uint256 expectedProfit,
+        bool isTriangular
+    ) internal {
+        address[] memory assets = new address[](1);
+        assets[0] = asset;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = amount;
+        
+        bytes memory userData = abi.encode(path, sushiFirst, expectedProfit, isTriangular);
+        
+        emit FlashLoanProviderSelected(FlashLoanProvider.BALANCER, asset, amount);
+        vault.flashLoan(address(this), assets, amounts, userData);
+    }
+    
+    function _executeAaveFlashLoan(
+        address asset,
+        uint256 amount,
+        address[] memory path,
+        bool sushiFirst,
+        uint256 expectedProfit,
+        bool isTriangular
+    ) internal {
+        bytes memory params = abi.encode(path, sushiFirst, expectedProfit, isTriangular);
+        
+        emit FlashLoanProviderSelected(FlashLoanProvider.AAVE, asset, amount);
+        aavePool.flashLoanSimple(address(this), asset, amount, params, 0);
+    }
+    
+    function executeOperation(
+        address asset,
+        uint256 amount,
+        uint256 premium,
+        address initiator,
+        bytes calldata params
+    ) external override returns (bool) {
+        require(msg.sender == address(aavePool), "Only Aave pool");
+        require(initiator == address(this), "Invalid initiator");
+        
+        (address[] memory path, bool sushiFirst, uint256 expectedProfit, bool isTriangular) = abi.decode(params, (address[], bool, uint256, bool));
+        
+        require(_validatePriceFeeds(path), "Invalid price feed");
+        
+        uint256 startingBal = IERC20(asset).balanceOf(address(this));
+        
+        if (isTriangular) {
+            _executeTriangularSwap(asset, amount, path);
+        } else {
+            _executeDualSwap(asset, amount, path, sushiFirst);
+        }
+        
+        uint256 received = IERC20(asset).balanceOf(address(this));
+        uint256 totalOwed = amount + premium;
+        require(received >= totalOwed, "Unprofitable");
+        
+        uint256 profit = received - totalOwed;
+        uint256 minProfitAdjusted = _calculateMinProfitWithFee(amount, premium);
+        require(profit >= minProfitAdjusted, "Profit too low");
+        
+        require(profit >= expectedProfit * 90 / 100, "Profit deviation too high");
+        
+        IERC20(asset).approve(address(aavePool), totalOwed);
+        
+        if (isTriangular) {
+            emit TriangularArbitrageExecuted(path[0], path[1], path[2], amount, profit);
+        } else {
+            emit ArbitrageExecuted(asset, amount, profit, sushiFirst);
+        }
+        
+        return true;
+    }
+    
+    function _calculateMinProfitWithFee(uint256 amount, uint256 premium) internal view returns (uint256) {
+        uint256 baseMinProfit = (amount * minProfitBps) / 10000;
+        return baseMinProfit + premium;
+    }
 
     function withdraw(address token) external onlyOwner {
         uint256 balance = IERC20(token).balanceOf(address(this));
@@ -439,8 +590,30 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable {
         uint256 finalAmount = amounts2[amounts2.length - 1];
         if (finalAmount > amount) {
             profit = finalAmount - amount;
+            
+            uint256 aaveFee = _calculateAaveFee(amount);
+            if (profit > aaveFee) {
+                profit = profit - aaveFee;
+            } else {
+                profit = 0;
+            }
         } else {
             profit = 0;
+        }
+    }
+    
+    function _calculateAaveFee(uint256 amount) internal view returns (uint256) {
+        uint128 feeBps = aavePool.FLASHLOAN_PREMIUM_TOTAL();
+        return (amount * feeBps) / 10000;
+    }
+    
+    function getOptimalProvider(address asset, uint256 amount) external view returns (FlashLoanProvider provider, uint256 fee) {
+        provider = _selectOptimalProvider(asset, amount);
+        
+        if (provider == FlashLoanProvider.BALANCER) {
+            fee = 0;
+        } else {
+            fee = _calculateAaveFee(amount);
         }
     }
     
