@@ -17,6 +17,9 @@
     "test:crosschain": "hardhat test test/run-bot.test.ts --grep 'Cross-Chain'",
     "test:flashbots": "hardhat test test/run-bot.test.ts --grep 'Flashbots'",
     "test:mev": "hardhat test test/run-bot.test.ts --grep 'MEV'",
+    "test:arb": "hardhat test test/arb-simulation.test.ts --network hardhat",
+    "test:arb-fork": "hardhat test test/arb-simulation.test.ts --network hardhat_arbitrum",
+    "test:integration-fork": "hardhat test --network hardhat_arbitrum",
     "test:coverage": "hardhat coverage",
     "test:gas": "REPORT_GAS=true hardhat test",
     
@@ -35,6 +38,8 @@
     "bot:full": "ENABLE_CROSS_CHAIN_MONITORING=true ENABLE_TRIANGULAR_ARBITRAGE=true ts-node scripts/run-bot.ts",
     "bot:debug": "DEBUG_MODE=true VERBOSE_LOGGING=true ts-node scripts/run-bot.ts",
     "bot:dry-run": "ENABLE_SIMULATION_MODE=true VERBOSE_LOGGING=true ts-node scripts/run-bot.ts",
+    "bot:dry": "ts-node scripts/run-bot.ts --simulate",
+    "bot:dry-verbose": "ts-node scripts/run-bot.ts --simulate --verbose",
     "bot:arbitrum": "ENABLE_CROSS_CHAIN_MONITORING=false ts-node scripts/run-bot.ts",
     "bot:optimism": "ENABLE_CROSS_CHAIN_MONITORING=false ts-node scripts/run-bot.ts",
     "bot:high-gas": "MAX_PRIORITY_FEE=5 ts-node scripts/run-bot.ts",
@@ -65,7 +70,8 @@
     "simulate:arbitrage": "ts-node scripts/simulate.ts",
     "simulate:triangular": "ENABLE_TRIANGULAR_ARBITRAGE=true ts-node scripts/simulate.ts",
     "simulate:crosschain": "ENABLE_CROSS_CHAIN_MONITORING=true ts-node scripts/simulate.ts",
-    "simulate:flashbots": "TEST_FLASHBOTS_SIMULATION=true ts-node scripts/simulate.ts",
+    "simulate:flashbots": "ts-node scripts/simulate-flashbots.ts",
+    "simulate:bundle": "ts-node scripts/simulate-flashbots.ts --bundle",
     
     "analyze:profits": "ts-node scripts/analyze-profits.ts",
     "analyze:gas": "ts-node scripts/analyze-gas.ts",
@@ -75,6 +81,7 @@
     "fork:arbitrum": "hardhat node --fork $ARB_RPC --fork-block-number $FORK_BLOCK",
     "fork:optimism": "hardhat node --fork $OPT_RPC --fork-block-number $FORK_BLOCK_OPT",
     "fork:mainnet": "hardhat node --fork $MAINNET_RPC --fork-block-number $FORK_BLOCK",
+    "fork:test": "hardhat node --fork $ARB_RPC --fork-block-number $FORK_BLOCK",
     
     "node:arbitrum": "hardhat node --network hardhat_arbitrum",
     "node:optimism": "hardhat node --network hardhat_optimism",
