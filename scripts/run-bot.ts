@@ -1,12 +1,16 @@
 import { ethers } from "ethers";
 import { FlashbotsBundleProvider, FlashbotsBundleTransaction, FlashbotsBundleResolution } from "@flashbots/ethers-provider-bundle";
-import { MevShareClient } from "@flashbots/mev-share-client";
+import MevShareClient from "@flashbots/mev-share-client";
 import dotenv from "dotenv";
 import chalk from "chalk";
 import winston from "winston";
-import cron from "node-cron";
+import * as cron from "node-cron";
 import Big from "big.js";
 import axios from "axios";
+import { DynamicGasPricer, GasSettings } from "../utils/gas-pricing";
+import { VolatileTokenTracker, TokenPair } from "../utils/volatile-tokens";
+import { EnhancedDEXManager, DEXRouter } from "../utils/dex-routers";
+import { EnhancedArbitragePathfinder } from "../utils/arbitrage-pathfinder";
 
 import balancerVaultABI from "../abi/BalancerVault.json";
 import uniswapV2RouterABI from "../abi/UniswapV2Router.json";
@@ -113,33 +117,33 @@ interface GasSettings {
 
 class EnhancedMEVBot {
   // Provider setup
-  private arbitrumProvider: ethers.JsonRpcProvider;
-  private optimismProvider: ethers.JsonRpcProvider;
-  private executorSigner: ethers.Wallet;
-  private authSigner: ethers.Wallet;
-  private optimismExecutor: ethers.Wallet;
+  private arbitrumProvider!: ethers.JsonRpcProvider;
+  private optimismProvider!: ethers.JsonRpcProvider;
+  private executorSigner!: ethers.Wallet;
+  private authSigner!: ethers.Wallet;
+  private optimismExecutor!: ethers.Wallet;
   
   // Flashbots integration
-  private flashbotsProvider: FlashbotsBundleProvider;
-  private mevShareClient: MevShareClient;
+  private flashbotsProvider!: FlashbotsBundleProvider;
+  private mevShareClient!: MevShareClient;
   
   // Contract instances
-  private arbBotContract: ethers.Contract;
-  private optBotContract: ethers.Contract;
-  private arbBalancerVault: ethers.Contract;
-  private optBalancerVault: ethers.Contract;
-  private arbAavePool: ethers.Contract;
-  private optAavePool: ethers.Contract;
+  private arbBotContract!: ethers.Contract;
+  private optBotContract!: ethers.Contract;
+  private arbBalancerVault!: ethers.Contract;
+  private optBalancerVault!: ethers.Contract;
+  private arbAavePool!: ethers.Contract;
+  private optAavePool!: ethers.Contract;
   
   // Router contracts - Arbitrum
-  private arbUniV2Router: ethers.Contract;
-  private arbSushiRouter: ethers.Contract;
-  private arbUniV3Quoter: ethers.Contract;
+  private arbUniV2Router!: ethers.Contract;
+  private arbSushiRouter!: ethers.Contract;
+  private arbUniV3Quoter!: ethers.Contract;
   
   // Router contracts - Optimism
-  private optUniV2Router: ethers.Contract;
-  private optSushiRouter: ethers.Contract;
-  private optUniV3Quoter: ethers.Contract;
+  private optUniV2Router!: ethers.Contract;
+  private optSushiRouter!: ethers.Contract;
+  private optUniV3Quoter!: ethers.Contract;
   
   // Token addresses - Arbitrum
   private readonly TOKENS_ARB = {
@@ -501,15 +505,21 @@ class EnhancedMEVBot {
         this.arbitrumProvider,
         this.authSigner,
         process.env.FLASHBOTS_RELAY_URL || "https://relay.flashbots.net",
-        "arbitrum"
+        "mainnet"
       );
       
-      // Initialize MEV-Share client
-      this.mevShareClient = new MevShareClient({
-        name: "enhanced-arb-bot",
-        url: process.env.MEV_SHARE_URL || "https://mev-share.flashbots.net",
-        signer: this.authSigner
-      });
+      // Initialize MEV-Share client (use mainnet for MEV-Share)
+      try {
+        const mainnetProvider = new ethers.JsonRpcProvider(process.env.MAINNET_RPC || "https://eth-mainnet.g.alchemy.com/v2/demo");
+        const mainnetSigner = new ethers.Wallet(process.env.FLASHBOTS_AUTH_KEY!, mainnetProvider);
+        const mainnetNetwork = await mainnetProvider.getNetwork();
+        this.mevShareClient = MevShareClient.fromNetwork(
+          mainnetSigner,
+          mainnetNetwork
+        );
+      } catch (error) {
+        logger.warn("MEV-Share client initialization failed, continuing without MEV-Share", error);
+      }
       
       // Verify balances
       const arbBalance = await this.arbitrumProvider.getBalance(this.executorSigner.address);
@@ -520,7 +530,7 @@ class EnhancedMEVBot {
         arbitrumBalance: ethers.formatEther(arbBalance),
         optimismBalance: ethers.formatEther(optBalance),
         flashbotsEnabled: true,
-        mevShareEnabled: true
+        mevShareEnabled: !!this.mevShareClient
       });
       
       // Check circuit breaker
@@ -646,12 +656,13 @@ class EnhancedMEVBot {
           });
           
           // Simulate bundle without submission
+          const signedBundle = await this.flashbotsProvider.signBundle(bundle.transactions);
           const simulation = await this.flashbotsProvider.simulate(
-            bundle.transactions,
+            signedBundle,
             bundle.targetBlockNumber
           );
           
-          if (simulation.error) {
+          if ('error' in simulation) {
             logger.debug(chalk.yellow("⚠️ Bundle simulation warning"), simulation.error);
           } else {
             logger.debug(chalk.green("✅ Bundle simulation successful"), {
@@ -701,16 +712,276 @@ class EnhancedMEVBot {
     logger.info(chalk.cyan("────────────────────────────────────────\n"));
   }
 
-  // Placeholder methods for compatibility - these would contain the rest of the implementation
-  async scanForArbitrageOpportunities(): Promise<ArbitrageOpportunity[]> { return []; }
-  async scanCrossChainOpportunities(): Promise<CrossChainOpportunity[]> { return []; }
-  private async createMEVBundle(opportunity: ArbitrageOpportunity): Promise<MEVBundle | null> { return null; }
+  // Enhanced arbitrage scanning with volatile tokens and multi-DEX support
+  async scanForArbitrageOpportunities(): Promise<ArbitrageOpportunity[]> {
+    const opportunities: ArbitrageOpportunity[] = [];
+    
+    try {
+      // Scan Arbitrum opportunities
+      const arbPathfinder = new EnhancedArbitragePathfinder(new Map([[42161, this.arbitrumProvider]]));
+      const arbOpportunities = await arbPathfinder.findArbitrageOpportunities(42161, 4, 0.005);
+      
+      for (const opportunity of arbOpportunities) {
+        const arbOpp = this.convertToLegacyFormat(opportunity, 42161);
+        if (arbOpp) opportunities.push(arbOpp);
+      }
+      
+      // Scan Optimism opportunities if cross-chain enabled
+      if (this.crossChainEnabled) {
+        const optPathfinder = new EnhancedArbitragePathfinder(new Map([[10, this.optimismProvider]]));
+        const optOpportunities = await optPathfinder.findArbitrageOpportunities(10, 4, 0.005);
+        
+        for (const opportunity of optOpportunities) {
+          const optOpp = this.convertToLegacyFormat(opportunity, 10);
+          if (optOpp) opportunities.push(optOpp);
+        }
+      }
+      
+      if (this.verboseMode && opportunities.length > 0) {
+        logger.info(chalk.green(`🎯 Enhanced pathfinding found ${opportunities.length} opportunities`));
+        
+        // Log DEX coverage statistics
+        const arbStats = EnhancedDEXManager.getCoverageStats(42161);
+        const optStats = this.crossChainEnabled ? EnhancedDEXManager.getCoverageStats(10) : null;
+        
+        logger.info(chalk.cyan(`📊 Arbitrum: ${arbStats.totalRouters} DEXes, avg liquidity: ${arbStats.averageLiquidityScore.toFixed(1)}`));
+        if (optStats) {
+          logger.info(chalk.cyan(`📊 Optimism: ${optStats.totalRouters} DEXes, avg liquidity: ${optStats.averageLiquidityScore.toFixed(1)}`));
+        }
+      }
+      
+    } catch (error) {
+      logger.error(chalk.red("Error in enhanced arbitrage scanning:"), error);
+    }
+    
+    return opportunities.slice(0, 20); // Limit for performance
+  }
+  async scanCrossChainOpportunities(): Promise<CrossChainOpportunity[]> {
+    if (!this.crossChainEnabled) return [];
+    
+    try {
+      const crossChainOpportunities: CrossChainOpportunity[] = [];
+      
+      // Get high-volatility pairs for both chains
+      const arbPairs = VolatileTokenTracker.getHighVolatilityPairs(42161);
+      const optPairs = VolatileTokenTracker.getHighVolatilityPairs(10);
+      
+      // Find matching pairs across chains
+      for (const arbPair of arbPairs.slice(0, 10)) {
+        for (const optPair of optPairs.slice(0, 10)) {
+          if (arbPair.tokenA.symbol === optPair.tokenA.symbol && 
+              arbPair.tokenB.symbol === optPair.tokenB.symbol) {
+            
+            const spread = Math.abs(arbPair.expectedVolatility - optPair.expectedVolatility);
+            const bridgeCost = "0.005"; // 0.5% bridge cost
+            
+            if (spread > 0.001) { // 0.1% minimum spread
+              crossChainOpportunities.push({
+                id: `cross-${arbPair.tokenA.symbol}-${arbPair.tokenB.symbol}-${Date.now()}`,
+                tokenA: arbPair.tokenA.address,
+                tokenB: arbPair.tokenB.address,
+                amountIn: ethers.parseEther("1").toString(),
+                arbitrumPrice: "1.0",
+                optimismPrice: (1 + spread).toString(),
+                spread: spread.toString(),
+                estimatedProfit: ethers.parseEther((spread - 0.005).toString()).toString(),
+                bridgeCost,
+                netProfit: ethers.parseEther(Math.max(0, spread - 0.005).toString()).toString(),
+                timestamp: Date.now(),
+                profitable: spread > 0.005,
+                alertLevel: spread > 0.02 ? 'critical' : spread > 0.01 ? 'warning' : 'info'
+              });
+            }
+          }
+        }
+      }
+      
+      if (this.verboseMode && crossChainOpportunities.length > 0) {
+        logger.info(chalk.yellow(`🌉 Found ${crossChainOpportunities.length} cross-chain opportunities`));
+      }
+      
+      return crossChainOpportunities;
+      
+    } catch (error) {
+      logger.error(chalk.red("Error scanning cross-chain opportunities:"), error);
+      return [];
+    }
+  }
+  private async createMEVBundle(opportunity: ArbitrageOpportunity): Promise<MEVBundle | null> {
+    try {
+      const provider = opportunity.chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;
+      const botContract = opportunity.chainId === 42161 ? this.arbBotContract : this.optBotContract;
+      const signer = opportunity.chainId === 42161 ? this.executorSigner : this.optimismExecutor;
+      
+      let tx;
+      
+      if (opportunity.isTriangular) {
+        tx = await botContract.executeTriangularArb.populateTransaction(
+          opportunity.tokenA,
+          opportunity.amountIn,
+          opportunity.path,
+          opportunity.expectedProfit
+        );
+      } else {
+        tx = await botContract.executeArb.populateTransaction(
+          opportunity.tokenA,
+          opportunity.amountIn,
+          opportunity.path,
+          opportunity.sushiFirst,
+          opportunity.expectedProfit
+        );
+      }
+      
+      // Set gas parameters with dynamic pricing (high urgency for MEV)
+      const gasSettings = await this.estimateGasSettings(opportunity.chainId, 'high');
+      tx.gasLimit = gasSettings.gasLimit;
+      tx.maxFeePerGas = gasSettings.maxFeePerGas;
+      tx.maxPriorityFeePerGas = gasSettings.maxPriorityFeePerGas;
+      tx.nonce = await provider.getTransactionCount(signer.address);
+      tx.chainId = BigInt(opportunity.chainId);
+      
+      if (this.verboseMode) {
+        logger.debug(chalk.cyan(`🚀 MEV bundle gas: ${DynamicGasPricer.formatGasSettings(gasSettings)}`));
+      }
+      
+      const currentBlock = await provider.getBlockNumber();
+      const targetBlockNumber = currentBlock + 1;
+      
+      const bundleTransaction: FlashbotsBundleTransaction = {
+        signer: signer,
+        transaction: tx
+      };
+      
+      const bundle: MEVBundle = {
+        transactions: [bundleTransaction],
+        targetBlockNumber
+      };
+      
+      return bundle;
+      
+    } catch (error) {
+      logger.error(chalk.red("Error creating MEV bundle"), error);
+      return null;
+    }
+  }
   private async submitMEVBundle(bundle: MEVBundle): Promise<boolean> { return false; }
+  
+  private async estimateGasSettings(chainId: number, urgency: 'low' | 'medium' | 'high' = 'high'): Promise<GasSettings> {
+    try {
+      const provider = chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;
+      
+      // Use dynamic gas pricer for optimal pricing
+      const gasSettings = await DynamicGasPricer.calculateOptimalGas(
+        provider,
+        chainId,
+        urgency
+      );
+      
+      if (this.verboseMode) {
+        logger.info(chalk.cyan(`⛽ Dynamic gas pricing: ${DynamicGasPricer.formatGasSettings(gasSettings)}`));
+      }
+      
+      return gasSettings;
+      
+    } catch (error) {
+      logger.error(chalk.red("Error calculating dynamic gas settings"), error);
+      
+      // Use fallback from DynamicGasPricer
+      const provider = chainId === 42161 ? this.arbitrumProvider : this.optimismProvider;
+      return await DynamicGasPricer.calculateOptimalGas(provider, chainId, urgency);
+    }
+  }
+  private convertToLegacyFormat(opportunity: any, chainId: number): ArbitrageOpportunity | null {
+    try {
+      return {
+        id: opportunity.id,
+        tokenA: opportunity.tokenPair.tokenA.address,
+        tokenB: opportunity.tokenPair.tokenB.address,
+        amountIn: opportunity.amountIn.toString(),
+        expectedProfit: opportunity.expectedAmountOut.toString(),
+        netProfit: opportunity.netProfit.toString(),
+        sushiFirst: Math.random() > 0.5,
+        path: opportunity.bestPath.path,
+        gasEstimate: opportunity.bestPath.totalGasCost.toString(),
+        gasCost: ethers.formatEther(opportunity.bestPath.totalGasCost * BigInt(50000000)), // 0.05 gwei
+        timestamp: Date.now(),
+        isTriangular: opportunity.bestPath.isTriangular,
+        chainId,
+        priority: Math.floor(opportunity.confidence * 10),
+        spread: opportunity.bestPath.profitMargin,
+        slippage: 0.01,
+        flashLoanProvider: 'BALANCER' as const,
+        flashLoanFee: "0"
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+  
   private async checkCircuitBreaker(): Promise<void> {}
-  async monitorAndExecute(): Promise<void> {}
+  async monitorAndExecute(): Promise<void> {
+    if (this.isRunning) return;
+    
+    this.isRunning = true;
+    
+    try {
+      if (this.verboseMode) {
+        logger.info(chalk.blue("🔍 Enhanced scanning: Volatile tokens + Multi-DEX coverage"));
+      }
+      
+      // Enhanced arbitrage scanning
+      const opportunities = await this.scanForArbitrageOpportunities();
+      
+      // Cross-chain opportunities
+      const crossChainOpportunities = await this.scanCrossChainOpportunities();
+      
+      // Update simulation stats
+      for (const opportunity of opportunities) {
+        this.updateSimulationStats(opportunity);
+        
+        if (this.simulationMode) {
+          await this.simulateArbitrage(opportunity);
+        }
+      }
+      
+      // Log results
+      if (opportunities.length > 0) {
+        logger.info(chalk.green(`✅ Found ${opportunities.length} arbitrage opportunities`));
+        
+        const bestOpportunity = opportunities[0];
+        logger.info(chalk.cyan(`💎 Best: ${bestOpportunity.tokenA}-${bestOpportunity.tokenB}, profit: ${ethers.formatEther(bestOpportunity.netProfit)} ETH`));
+      }
+      
+      if (crossChainOpportunities.length > 0) {
+        logger.info(chalk.yellow(`🌉 ${crossChainOpportunities.length} cross-chain opportunities detected`));
+      }
+      
+      if (opportunities.length === 0 && crossChainOpportunities.length === 0) {
+        if (this.verboseMode) {
+          logger.info(chalk.gray("📊 No profitable opportunities found this cycle"));
+        }
+      }
+      
+    } catch (error) {
+      logger.error(chalk.red("Error in enhanced monitoring cycle"), error);
+    } finally {
+      this.isRunning = false;
+    }
+  }
   
   async start(): Promise<void> {
     logger.info(chalk.green("🤖 Starting Enhanced MEV Arbitrage Bot..."));
+    
+    if (this.verboseMode) {
+      // Log enhanced features
+      const arbStats = EnhancedDEXManager.getCoverageStats(42161);
+      const volatilePairs = VolatileTokenTracker.getHighVolatilityPairs(42161).length;
+      
+      logger.info(chalk.cyan(`🔥 Volatile pairs: ${volatilePairs}`));
+      logger.info(chalk.cyan(`🏪 DEX coverage: ${Object.keys(arbStats.routerTypes).join(', ')}`));
+      logger.info(chalk.cyan(`🧠 Pathfinding: Enhanced Bellman-Ford + Line Graph`));
+    }
+    
     logger.info(chalk.green("✅ Enhanced MEV bot started successfully"));
   }
   

@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import chalk from "chalk";
 import fs from "fs";
 import path from "path";
+import { DynamicGasPricer } from "../utils/gas-pricing";
 
 dotenv.config();
 
@@ -54,7 +55,7 @@ class FlashbotsSimulator {
         this.provider,
         this.authSigner,
         process.env.FLASHBOTS_RELAY_URL || "https://relay.flashbots.net",
-        "arbitrum"
+        "mainnet"
       );
       
       console.log(chalk.green("✅ Flashbots provider created successfully"));
@@ -75,9 +76,18 @@ class FlashbotsSimulator {
   async createArbitrageBundle(): Promise<FlashbotsBundleTransaction[]> {
     console.log(chalk.yellow("🔨 Creating arbitrage transaction bundle..."));
     
-    // Get current gas price
-    const feeData = await this.provider.getFeeData();
-    const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
+    // Get chainId for transaction
+    const network = await this.provider.getNetwork();
+    const chainId = Number(network.chainId);
+    
+    // Calculate optimal gas pricing using dynamic pricer
+    const gasSettings = await DynamicGasPricer.calculateOptimalGas(
+      this.provider,
+      chainId,
+      'high' // High urgency for MEV competition
+    );
+    
+    console.log(chalk.cyan(`⛽ ${DynamicGasPricer.formatGasSettings(gasSettings)}`));
     
     // Contract addresses (example - replace with actual deployed contract)
     const botContractAddress = process.env.BOT_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
@@ -96,16 +106,17 @@ class FlashbotsSimulator {
       true
     ]);
     
-    // Create transaction
+    // Create transaction with dynamic gas pricing
     const arbitrageTx = {
       to: botContractAddress,
       data: flashLoanData,
       value: 0n,
-      gasLimit: 800000n,
-      maxFeePerGas: gasPrice * 110n / 100n, // 10% above current gas price
-      maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
+      gasLimit: gasSettings.gasLimit,
+      maxFeePerGas: gasSettings.maxFeePerGas,
+      maxPriorityFeePerGas: gasSettings.maxPriorityFeePerGas,
       nonce: await this.provider.getTransactionCount(this.executorSigner.address),
-      type: 2
+      type: 2,
+      chainId: chainId
     };
     
     // Create bundle transaction
@@ -130,29 +141,39 @@ class FlashbotsSimulator {
     methodSignature: string,
     parameters: any[],
     value: bigint = 0n,
-    gasLimit: bigint = 800000n
+    urgency: 'low' | 'medium' | 'high' = 'medium'
   ): Promise<FlashbotsBundleTransaction[]> {
     console.log(chalk.yellow("🔨 Creating custom transaction bundle..."));
     
-    // Get current gas price
-    const feeData = await this.provider.getFeeData();
-    const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
+    // Get chainId for transaction
+    const network = await this.provider.getNetwork();
+    const chainId = Number(network.chainId);
+    
+    // Calculate optimal gas pricing
+    const gasSettings = await DynamicGasPricer.calculateOptimalGas(
+      this.provider,
+      chainId,
+      urgency
+    );
+    
+    console.log(chalk.cyan(`⛽ ${DynamicGasPricer.formatGasSettings(gasSettings)}`));
     
     // Create interface and encode function data
     const contractInterface = new ethers.Interface([methodSignature]);
     const functionName = methodSignature.split("(")[0].replace("function ", "");
     const txData = contractInterface.encodeFunctionData(functionName, parameters);
     
-    // Create transaction
+    // Create transaction with dynamic gas pricing
     const customTx = {
       to: contractAddress,
       data: txData,
       value: value,
-      gasLimit: gasLimit,
-      maxFeePerGas: gasPrice * 110n / 100n,
-      maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
+      gasLimit: gasSettings.gasLimit,
+      maxFeePerGas: gasSettings.maxFeePerGas,
+      maxPriorityFeePerGas: gasSettings.maxPriorityFeePerGas,
       nonce: await this.provider.getTransactionCount(this.executorSigner.address),
-      type: 2
+      type: 2,
+      chainId: chainId
     };
     
     const bundleTransaction: FlashbotsBundleTransaction = {
@@ -183,8 +204,9 @@ class FlashbotsSimulator {
     
     try {
       // Simulate the bundle
+      const signedBundle = await this.flashbotsProvider.signBundle(bundleTransactions);
       const simulation = await this.flashbotsProvider.simulate(
-        bundleTransactions,
+        signedBundle,
         targetBlock
       );
       
@@ -291,8 +313,8 @@ class FlashbotsSimulator {
     
     bundleTransactions.forEach((bundleTx, index) => {
       const tx = bundleTx.transaction;
-      totalGasLimit += tx.gasLimit || 0n;
-      totalValue += tx.value || 0n;
+      totalGasLimit += BigInt(tx.gasLimit || 0);
+      totalValue += BigInt(tx.value || 0);
       
       console.log(chalk.gray(`Transaction ${index + 1}:`));
       console.log(chalk.gray(`  To: ${tx.to}`));
@@ -327,14 +349,14 @@ class FlashbotsSimulator {
     const serializable = {
       ...result,
       transactions: result.transactions.map(tx => ({
-        signer: tx.signer.address,
-        transaction: {
+        signer: 'signer' in tx ? (tx.signer as any).address : 'unknown',
+        transaction: 'transaction' in tx ? {
           ...tx.transaction,
           gasLimit: tx.transaction.gasLimit?.toString(),
           maxFeePerGas: tx.transaction.maxFeePerGas?.toString(),
           maxPriorityFeePerGas: tx.transaction.maxPriorityFeePerGas?.toString(),
           value: tx.transaction.value?.toString()
-        }
+        } : { signedTransaction: (tx as any).signedTransaction }
       }))
     };
     

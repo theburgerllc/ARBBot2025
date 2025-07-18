@@ -1,10 +1,10 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { FlashArbBotBalancer } from "../typechain-types";
+import { ethers, network } from "hardhat";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { Contract } from "ethers";
 
 describe("Aave V3 Flash Loan Integration", function () {
-  let flashArbBot: FlashArbBotBalancer;
+  let flashArbBot: Contract;
   let owner: SignerWithAddress;
   let user: SignerWithAddress;
   let impersonatedAccount: SignerWithAddress;
@@ -42,6 +42,7 @@ describe("Aave V3 Flash Loan Integration", function () {
     );
 
     await flashArbBot.setAuthorizedCaller(owner.address, true);
+    await flashArbBot.waitForDeployment();
   });
 
   describe("Provider Selection Logic", function () {

@@ -43,6 +43,10 @@
     "bot:dry-run": "ENABLE_SIMULATION_MODE=true VERBOSE_LOGGING=true ts-node scripts/run-bot.ts",
     "bot:dry": "ts-node scripts/run-bot.ts --simulate",
     "bot:dry-verbose": "ts-node scripts/run-bot.ts --simulate --verbose",
+    "bot:parallel": "ts-node scripts/run-bot-parallel.ts",
+    "bot:parallel:simulate": "ts-node scripts/run-bot-parallel.ts --simulate --verbose",
+    "bot:parallel:test": "ts-node scripts/run-bot-parallel.ts --simulate --verbose --duration 600 --workers 4",
+    "simulate:flashbots:parallel": "ts-node scripts/simulate-flashbots-parallel.ts",
     "bot:arbitrum": "ENABLE_CROSS_CHAIN_MONITORING=false ts-node scripts/run-bot.ts",
     "bot:optimism": "ENABLE_CROSS_CHAIN_MONITORING=false ts-node scripts/run-bot.ts",
     "bot:high-gas": "MAX_PRIORITY_FEE=5 ts-node scripts/run-bot.ts",
@@ -137,7 +141,11 @@
     "rate-limiter-flexible": "^7.1.1",
     "redis": "^4.6.10",
     "winston": "^3.11.0",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "symbiosis-js-sdk": "^3.5.7",
+    "@curvefi/api": "2.68.1",
+    "@gmx-io/sdk": "1.1.2",
+    "commander": "^11.0.0"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.0.9",
@@ -153,6 +161,7 @@
     "@types/lodash": "^4.14.199",
     "@types/mocha": "^10.0.2",
     "@types/node": "^20.8.0",
+    "@types/node-cron": "^3.0.11",
     "@types/ws": "^8.5.6",
     "@typescript-eslint/eslint-plugin": "^6.7.4",
     "@typescript-eslint/parser": "^6.7.4",
