@@ -1,0 +1,100 @@
+{
+  "timestamp": "2025-07-21T17:22:33.498Z",
+  "summary": {
+    "totalTested": 12,
+    "workingEndpoints": 4,
+    "averageResponseTime": 190
+  },
+  "bestEndpoints": {
+    "arbitrum-sepolia": [
+      {
+        "url": "https://arbitrum-sepolia.public.blastapi.io",
+        "network": "arbitrum-sepolia",
+        "chainId": 421614,
+        "isWorking": true,
+        "lastTested": "2025-07-21T17:22:11.427Z",
+        "source": "known",
+        "responseTime": 191,
+        "blockHeight": 175920913
+      },
+      {
+        "url": "https://sepolia-rollup.arbitrum.io/rpc",
+        "network": "arbitrum-sepolia",
+        "chainId": 421614,
+        "isWorking": true,
+        "lastTested": "2025-07-21T17:22:11.430Z",
+        "source": "known",
+        "responseTime": 196,
+        "blockHeight": 175920911
+      }
+    ],
+    "ethereum-sepolia": [],
+    "optimism-sepolia": [
+      {
+        "url": "https://optimism-sepolia.public.blastapi.io",
+        "network": "optimism-sepolia",
+        "chainId": 11155420,
+        "isWorking": true,
+        "lastTested": "2025-07-21T17:22:23.610Z",
+        "source": "known",
+        "responseTime": 116,
+        "blockHeight": 30658001
+      },
+      {
+        "url": "https://sepolia.optimism.io",
+        "network": "optimism-sepolia",
+        "chainId": 11155420,
+        "isWorking": true,
+        "lastTested": "2025-07-21T17:22:22.494Z",
+        "source": "known",
+        "responseTime": 257,
+        "blockHeight": 30658001
+      }
+    ]
+  },
+  "allResults": [
+    {
+      "url": "https://sepolia-rollup.arbitrum.io/rpc",
+      "network": "arbitrum-sepolia",
+      "chainId": 421614,
+      "isWorking": true,
+      "lastTested": "2025-07-21T17:22:11.430Z",
+      "source": "known",
+      "responseTime": 196,
+      "blockHeight": 175920911
+    },
+    {
+      "url": "https://arbitrum-sepolia.public.blastapi.io",
+      "network": "arbitrum-sepolia",
+      "chainId": 421614,
+      "isWorking": true,
+      "lastTested": "2025-07-21T17:22:11.427Z",
+      "source": "known",
+      "responseTime": 191,
+      "blockHeight": 175920913
+    },
+    {
+      "url": "https://sepolia.optimism.io",
+      "network": "optimism-sepolia",
+      "chainId": 11155420,
+      "isWorking": true,
+      "lastTested": "2025-07-21T17:22:22.494Z",
+      "source": "known",
+      "responseTime": 257,
+      "blockHeight": 30658001
+    },
+    {
+      "url": "https://optimism-sepolia.public.blastapi.io",
+      "network": "optimism-sepolia",
+      "chainId": 11155420,
+      "isWorking": true,
+      "lastTested": "2025-07-21T17:22:23.610Z",
+      "source": "known",
+      "responseTime": 116,
+      "blockHeight": 30658001
+    }
+  ],
+  "recommendations": [
+    "No working endpoints found for ethereum-sepolia - check network status"
+  ]
+}

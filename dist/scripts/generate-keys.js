@@ -12,10 +12,10 @@ const chalk_1 = __importDefault(require("chalk"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 class SecureKeyGenerator {
+    ENV_FILE = path_1.default.join(process.cwd(), '.env');
+    BACKUP_DIR = path_1.default.join(process.cwd(), 'backups');
+    ENTROPY_BYTES = 32;
     constructor() {
-        this.ENV_FILE = path_1.default.join(process.cwd(), '.env');
-        this.BACKUP_DIR = path_1.default.join(process.cwd(), 'backups');
-        this.ENTROPY_BYTES = 32;
         this.ensureBackupDir();
     }
     ensureBackupDir() {
@@ -50,7 +50,7 @@ class SecureKeyGenerator {
         const entropy = crypto_1.default.randomBytes(16).toString('hex');
         return {
             privateKey: wallet.privateKey,
-            publicKey: wallet.publicKey,
+            publicKey: wallet.signingKey.publicKey,
             address: wallet.address,
             entropy: entropy
         };
@@ -72,7 +72,7 @@ class SecureKeyGenerator {
                 return false;
             }
             // Validate that public key matches
-            if (testWallet.publicKey !== keyPair.publicKey) {
+            if (testWallet.signingKey.publicKey !== keyPair.publicKey) {
                 console.error(chalk_1.default.red("❌ Public key does not match"));
                 return false;
             }
@@ -298,11 +298,15 @@ REPORT_GAS=false
         const backupFilename = `wallet-backup-${timestamp}.json`;
         const backupPath = path_1.default.join(this.BACKUP_DIR, backupFilename);
         if (password) {
-            // Encrypt backup with password
-            const cipher = crypto_1.default.createCipher('aes-256-cbc', password);
+            // Encrypt backup with password using secure method
+            const key = crypto_1.default.scryptSync(password, 'salt', 32);
+            const iv = crypto_1.default.randomBytes(16);
+            const cipher = crypto_1.default.createCipheriv('aes-256-cbc', key, iv);
             let encrypted = cipher.update(backupJson, 'utf8', 'hex');
             encrypted += cipher.final('hex');
-            fs_1.default.writeFileSync(backupPath + '.encrypted', encrypted, { mode: 0o600 });
+            // Prepend IV to encrypted data
+            const finalEncrypted = iv.toString('hex') + ':' + encrypted;
+            fs_1.default.writeFileSync(backupPath + '.encrypted', finalEncrypted, { mode: 0o600 });
             console.log(chalk_1.default.green("✅ Encrypted backup created: "), backupPath + '.encrypted');
             return backupPath + '.encrypted';
         }

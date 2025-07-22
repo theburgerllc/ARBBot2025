@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, JsonRpcProvider, formatEther, isAddress, Wallet } from "ethers";
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
 import dotenv from "dotenv";
 import chalk from "chalk";
@@ -128,7 +128,7 @@ class ARBBotValidator {
 
       try {
         const startTime = Date.now();
-        const provider = new ethers.JsonRpcProvider(network.rpc);
+        const provider = new JsonRpcProvider(network.rpc);
         
         // Test connection with timeout
         const blockNumber = await Promise.race([
@@ -204,11 +204,11 @@ class ARBBotValidator {
         if (!network.rpc) continue;
 
         try {
-          const provider = new ethers.JsonRpcProvider(network.rpc);
+          const provider = new JsonRpcProvider(network.rpc);
           const connectedWallet = wallet.connect(provider);
           const balance = await connectedWallet.provider!.getBalance(wallet.address);
           
-          const balanceEth = ethers.formatEther(balance);
+          const balanceEth = formatEther(balance);
           const status = parseFloat(balanceEth) > 0.001 ? 'pass' : 'warning';
           const message = parseFloat(balanceEth) > 0.001 ? 'Sufficient balance' : 'Low balance';
           
@@ -231,7 +231,7 @@ class ARBBotValidator {
         this.addResult('Wallet', 'Flashbots Auth Derivation', 'pass', 'Auth wallet created', `Address: ${authWallet.address}`);
 
         // Test Flashbots provider creation (without actually connecting)
-        const arbProvider = new ethers.JsonRpcProvider(process.env.ARB_RPC!);
+        const arbProvider = new JsonRpcProvider(process.env.ARB_RPC!);
         const flashbotsProvider = await FlashbotsBundleProvider.create(
           arbProvider,
           authWallet,
@@ -279,7 +279,7 @@ class ARBBotValidator {
       }
 
       try {
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const provider = new JsonRpcProvider(rpcUrl);
         const code = await provider.getCode(contract.address);
         
         if (code === '0x' || code === '0x0') {

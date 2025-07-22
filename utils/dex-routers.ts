@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, Interface } from "ethers";
 
 export interface DEXRouter {
   name: string;
@@ -271,37 +271,37 @@ export class EnhancedDEXManager {
   /**
    * Get router interface for quote generation
    */
-  static getRouterInterface(routerType: DEXRouter['routerType']): ethers.Interface {
+  static getRouterInterface(routerType: DEXRouter['routerType']): Interface {
     switch (routerType) {
       case 'UNISWAP_V2':
-        return new ethers.Interface([
+        return new Interface([
           "function getAmountsOut(uint amountIn, address[] path) view returns (uint[] amounts)",
           "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) returns (uint[] amounts)"
         ]);
         
       case 'UNISWAP_V3':
-        return new ethers.Interface([
+        return new Interface([
           "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) returns (uint256 amountOut)"
         ]);
         
       case 'CURVE':
-        return new ethers.Interface([
+        return new Interface([
           "function get_dy(int128 i, int128 j, uint256 dx) view returns (uint256)",
           "function exchange(int128 i, int128 j, uint256 dx, uint256 min_dy) returns (uint256)"
         ]);
         
       case 'GMX':
-        return new ethers.Interface([
+        return new Interface([
           "function swap(address[] path, uint256 amountIn, uint256 minOut, address receiver) returns (uint256)"
         ]);
         
       case 'BALANCER':
-        return new ethers.Interface([
+        return new Interface([
           "function queryBatchSwap(uint8 kind, (bytes32 poolId, uint256 assetInIndex, uint256 assetOutIndex, uint256 amount, bytes userData)[] swaps, address[] assets, (address sender, bool fromInternalBalance, address recipient, bool toInternalBalance) funds) view returns (int256[] assetDeltas)"
         ]);
         
       default:
-        return new ethers.Interface([]);
+        return new Interface([]);
     }
   }
   

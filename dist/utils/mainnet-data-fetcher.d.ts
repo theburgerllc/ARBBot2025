@@ -1,0 +1,69 @@
+import { JsonRpcProvider } from "ethers";
+export interface MainnetMarketData {
+    chainId: number;
+    blockNumber: number;
+    gasPrice: bigint;
+    baseFeePerGas: bigint;
+    timestamp: number;
+    tokenPrices: Map<string, bigint>;
+    liquidityDepths: Map<string, bigint>;
+    dexPrices: Map<string, Map<string, bigint>>;
+    networkLoad: number;
+}
+export interface RealArbitrageOpportunity {
+    id: string;
+    tokenA: string;
+    tokenB: string;
+    tokenASymbol: string;
+    tokenBSymbol: string;
+    uniswapV2Price: bigint;
+    sushiswapPrice: bigint;
+    balancerPrice: bigint;
+    priceSpread: bigint;
+    spreadPercentage: number;
+    recommendedTradeSize: bigint;
+    estimatedProfit: bigint;
+    estimatedGasCost: bigint;
+    netProfit: bigint;
+    profitMargin: number;
+    liquidityDepthA: bigint;
+    liquidityDepthB: bigint;
+    maxTradeSize: bigint;
+    priceImpact: number;
+    chainId: number;
+    blockNumber: number;
+    timestamp: number;
+    confidence: number;
+    volatilityIndex: number;
+    optimalDexA: string;
+    optimalDexB: string;
+    executionComplexity: 'simple' | 'complex' | 'advanced';
+}
+export declare class MainnetDataFetcher {
+    private _arbProvider;
+    private _optProvider;
+    private priceCache;
+    private liquidityCache;
+    private readonly ROUTER_ABI;
+    private readonly ERC20_ABI;
+    constructor();
+    get arbProvider(): JsonRpcProvider;
+    get optProvider(): JsonRpcProvider;
+    fetchCurrentMarketData(chainId: number): Promise<MainnetMarketData>;
+    scanRealArbitrageOpportunities(chainId: number): Promise<RealArbitrageOpportunity[]>;
+    private getTradingPairsForChain;
+    private analyzeTradingPair;
+    private fetchRealTokenPrices;
+    private getUniswapV2Price;
+    private getSushiswapPrice;
+    private getBalancerPrice;
+    private fetchLiquidityDepths;
+    private fetchDEXPrices;
+    private calculateNetworkLoad;
+    private calculateOptimalTradeSize;
+    private estimateL2GasCost;
+    private calculateVolatilityIndex;
+    private calculateConfidence;
+    private determineExecutionComplexity;
+    private sleep;
+}

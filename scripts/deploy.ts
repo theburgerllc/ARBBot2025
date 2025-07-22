@@ -1,4 +1,4 @@
-import { ethers } from "hardhat";
+import hre from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 interface NetworkConfig {

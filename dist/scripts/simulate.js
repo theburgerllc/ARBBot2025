@@ -16,11 +16,14 @@ const logger = winston_1.default.createLogger({
     transports: [new winston_1.default.transports.Console()]
 });
 class ArbitrageSimulator {
+    provider;
+    uniswapV2Router;
+    sushiSwapRouter;
+    WETH_ADDRESS = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"; // Arbitrum WETH
+    USDC_ADDRESS = "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"; // Arbitrum USDC
+    USDT_ADDRESS = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"; // Arbitrum USDT
+    DAI_ADDRESS = "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1"; // Arbitrum DAI
     constructor() {
-        this.WETH_ADDRESS = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"; // Arbitrum WETH
-        this.USDC_ADDRESS = "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"; // Arbitrum USDC
-        this.USDT_ADDRESS = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"; // Arbitrum USDT
-        this.DAI_ADDRESS = "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1"; // Arbitrum DAI
         this.provider = new ethers_1.ethers.JsonRpcProvider(process.env.ARB_RPC);
         this.uniswapV2Router = new ethers_1.ethers.Contract(process.env.UNISWAP_V2_ROUTER_ADDRESS, UniswapV2Router_json_1.default, this.provider);
         this.sushiSwapRouter = new ethers_1.ethers.Contract(process.env.SUSHI_ROUTER_ADDRESS, SushiSwapRouter_json_1.default, this.provider);

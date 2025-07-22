@@ -1,4 +1,4 @@
-import { ethers } from "hardhat";
+import hre from "hardhat";
 import { config } from "dotenv";
 import { isAddress } from "ethers";
 import * as fs from "fs";
@@ -14,6 +14,7 @@ interface DeploymentConfig {
   balancerVault: string;
   botContractAddress?: string;
 }
+console.log("ARB PRIVATE_KEY:", process.env.PRIVATE_KEY);
 
 function validateConfig(): DeploymentConfig {
   const privateKey = process.env.PRIVATE_KEY;
@@ -54,20 +55,21 @@ function validateConfig(): DeploymentConfig {
 }
 
 async function deployContract(config: DeploymentConfig) {
-  const [deployer] = await ethers.getSigners();
+  const [deployer] = await hre.ethers.getSigners();
   
   console.log("Deploying FlashArbBotBalancer to Arbitrum...");
   console.log("Deployer address:", deployer.address);
   console.log("Network:", "arbitrum");
 
   const balance = await deployer.provider.getBalance(deployer.address);
-  console.log("Deployer balance:", ethers.formatEther(balance), "ETH");
+  console.log("Deployer balance:", hre.ethers.formatEther(balance), "ETH");
 
-  const FlashArbBotBalancer = await ethers.getContractFactory("FlashArbBotBalancer");
+  const FlashArbBotBalancer = await hre.ethers.getContractFactory("FlashArbBotBalancer");
   const flashArbBot = await FlashArbBotBalancer.deploy(
-    config.uniV2Router,
+    config.balancerVault,
     config.sushiRouter,
-    config.balancerVault
+    config.uniV2Router,
+    process.env.UNISWAP_V3_QUOTER_ADDRESS!
   );
 
   await flashArbBot.waitForDeployment();

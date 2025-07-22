@@ -1,0 +1,31 @@
+{
+  "timestamp": "2025-07-21T18:27:07.590Z",
+  "walletAddress": "0x0696674781903E433dc4189a8B4901FEF4920985",
+  "balances": {
+    "Arbitrum Sepolia": "0.0",
+    "Ethereum Sepolia": "0",
+    "Optimism Sepolia": "0.0"
+  },
+  "faucetResults": [
+    {
+      "success": true,
+      "amount": "0.05",
+      "waitTime": 180,
+      "sourceIndex": 2
+    },
+    {
+      "success": false,
+      "error": "All 4 faucets failed: sepolia-faucet.pk910.de: sepolia-faucet.pk910.de: page.goto: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"https://sepolia-faucet.pk910.de/\", waiting until \"networkidle\"\u001b[22m\n (after 2 retries); faucets.chain.link: faucets.chain.link: page.goto: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"https://faucets.chain.link/sepolia\", waiting until \"networkidle\"\u001b[22m\n (after 2 retries); faucet.quicknode.com: faucet.quicknode.com: page.goto: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"https://faucet.quicknode.com/ethereum/sepolia\", waiting until \"networkidle\"\u001b[22m\n (after 2 retries)"
+    },
+    {
+      "success": true,
+      "amount": "0.05",
+      "waitTime": 180,
+      "sourceIndex": 2
+    }
+  ],
+  "recommendations": [
+    "Get more Arbitrum Sepolia ETH for contract deployment (need 0.05+ ETH)",
+    "All balances are very low - try multiple faucets and wait for confirmation"
+  ]
+}

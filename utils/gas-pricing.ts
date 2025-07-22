@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, JsonRpcProvider, parseUnits, formatUnits } from "ethers";
 
 export interface GasSettings {
   gasLimit: bigint;
@@ -16,7 +16,7 @@ export class DynamicGasPricer {
    * Uses provider.getFeeData() and implements dynamic tip calculation
    */
   static async calculateOptimalGas(
-    provider: ethers.JsonRpcProvider,
+    provider: JsonRpcProvider,
     chainId: number,
     urgency: 'low' | 'medium' | 'high' = 'medium'
   ): Promise<GasSettings> {
@@ -30,8 +30,8 @@ export class DynamicGasPricer {
       }
       
       // Extract base fee and suggested priority fee
-      const baseFee = feeData.gasPrice || ethers.parseUnits("0.1", "gwei");
-      const suggestedTip = feeData.maxPriorityFeePerGas || ethers.parseUnits("0.01", "gwei");
+      const baseFee = feeData.gasPrice || parseUnits("0.1", "gwei");
+      const suggestedTip = feeData.maxPriorityFeePerGas || parseUnits("0.01", "gwei");
       
       // Calculate network congestion based on gas usage
       const gasUsedPercentage = Number(block.gasUsed * 100n / block.gasLimit);
@@ -91,12 +91,12 @@ export class DynamicGasPricer {
       optimalTip = optimalTip * 80n / 100n; // 20% reduction
       
       // Minimum tip for Arbitrum (observed ~0.01 gwei)
-      const minArbitrumTip = ethers.parseUnits("0.01", "gwei");
+      const minArbitrumTip = parseUnits("0.01", "gwei");
       optimalTip = optimalTip < minArbitrumTip ? minArbitrumTip : optimalTip;
       
     } else if (chainId === 10) { // Optimism
       // Optimism can have higher priority fees (~0.10 gwei observed)
-      const minOptimismTip = ethers.parseUnits("0.10", "gwei");
+      const minOptimismTip = parseUnits("0.10", "gwei");
       optimalTip = optimalTip < minOptimismTip ? minOptimismTip : optimalTip;
       
       // Boost for congestion on Optimism
@@ -119,7 +119,7 @@ export class DynamicGasPricer {
     optimalTip = optimalTip * urgencyMultipliers[urgency] / 100n;
     
     // Cap maximum tip to prevent excessive fees
-    const maxTip = ethers.parseUnits("5", "gwei");
+    const maxTip = parseUnits("5", "gwei");
     return optimalTip > maxTip ? maxTip : optimalTip;
   }
   
@@ -151,16 +151,16 @@ export class DynamicGasPricer {
   private static getFallbackGasSettings(chainId: number, urgency: 'low' | 'medium' | 'high'): GasSettings {
     const fallbackSettings: { [key: number]: { baseFee: bigint; optimalTip: bigint } } = {
       42161: { // Arbitrum
-        baseFee: ethers.parseUnits("0.1", "gwei"),
-        optimalTip: ethers.parseUnits("0.01", "gwei")
+        baseFee: parseUnits("0.1", "gwei"),
+        optimalTip: parseUnits("0.01", "gwei")
       },
       10: { // Optimism
-        baseFee: ethers.parseUnits("0.001", "gwei"),
-        optimalTip: ethers.parseUnits("0.10", "gwei")
+        baseFee: parseUnits("0.001", "gwei"),
+        optimalTip: parseUnits("0.10", "gwei")
       },
       1: { // Mainnet
-        baseFee: ethers.parseUnits("20", "gwei"),
-        optimalTip: ethers.parseUnits("2", "gwei")
+        baseFee: parseUnits("20", "gwei"),
+        optimalTip: parseUnits("2", "gwei")
       }
     };
     
@@ -181,6 +181,6 @@ export class DynamicGasPricer {
    * Format gas settings for logging
    */
   static formatGasSettings(settings: GasSettings): string {
-    return `Gas: ${ethers.formatUnits(settings.maxFeePerGas, 'gwei')} gwei (tip: ${ethers.formatUnits(settings.optimalTip, 'gwei')} gwei, congestion: ${(settings.networkCongestion * 100).toFixed(1)}%)`;
+    return `Gas: ${formatUnits(settings.maxFeePerGas, 'gwei')} gwei (tip: ${formatUnits(settings.optimalTip, 'gwei')} gwei, congestion: ${(settings.networkCongestion * 100).toFixed(1)}%)`;
   }
 }

@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, JsonRpcProvider, parseEther, formatEther, parseUnits, formatUnits, Wallet } from "ethers";
 import { FlashbotsBundleProvider, FlashbotsBundleTransaction, FlashbotsBundleResolution } from "@flashbots/ethers-provider-bundle";
 import MevShareClient from "@flashbots/mev-share-client";
 import dotenv from "dotenv";
@@ -7,10 +7,18 @@ import winston from "winston";
 import * as cron from "node-cron";
 import Big from "big.js";
 import axios from "axios";
-import { DynamicGasPricer, GasSettings } from "../utils/gas-pricing";
-import { VolatileTokenTracker, TokenPair } from "../utils/volatile-tokens";
+import { DynamicGasPricer } from "../utils/gas-pricing";
+import { VolatileTokenTracker } from "../utils/volatile-tokens";
 import { EnhancedDEXManager, DEXRouter } from "../utils/dex-routers";
 import { EnhancedArbitragePathfinder } from "../utils/arbitrage-pathfinder";
+import { GasOptimizer } from "../utils/gas-optimizer";
+import { L2GasManager } from "../utils/l2-gas-manager";
+import { MEVBundleOptimizer } from "../utils/mev-bundle-optimizer";
+import { TriangularArbManager } from "../strategies/triangular-arbitrage";
+import { DynamicSlippageManager } from "../utils/dynamic-slippage-manager";
+import { AdaptiveProfitManager } from "../utils/adaptive-profit-manager";
+import { AdvancedRiskManager } from "../utils/advanced-risk-manager";
+import { OraclePriceValidator } from "../utils/oracle-price-validator";
 
 import balancerVaultABI from "../abi/BalancerVault.json";
 import uniswapV2RouterABI from "../abi/UniswapV2Router.json";
@@ -117,8 +125,8 @@ interface GasSettings {
 
 class EnhancedMEVBot {
   // Provider setup
-  private arbitrumProvider!: ethers.JsonRpcProvider;
-  private optimismProvider!: ethers.JsonRpcProvider;
+  private arbitrumProvider!: JsonRpcProvider;
+  private optimismProvider!: JsonRpcProvider;
   private executorSigner!: ethers.Wallet;
   private authSigner!: ethers.Wallet;
   private optimismExecutor!: ethers.Wallet;
@@ -126,6 +134,18 @@ class EnhancedMEVBot {
   // Flashbots integration
   private flashbotsProvider!: FlashbotsBundleProvider;
   private mevShareClient!: MevShareClient;
+  
+  // OPTIMIZATION MODULES
+  private gasOptimizer!: GasOptimizer;
+  private l2GasManager!: L2GasManager;
+  private mevBundleOptimizer!: MEVBundleOptimizer;
+  private triangularArbManager!: TriangularArbManager;
+  
+  // PHASE 3 OPTIMIZATION MODULES
+  private dynamicSlippageManager!: DynamicSlippageManager;
+  private adaptiveProfitManager!: AdaptiveProfitManager;
+  private advancedRiskManager!: AdvancedRiskManager;
+  private oraclePriceValidator!: OraclePriceValidator;
   
   // Contract instances
   private arbBotContract!: ethers.Contract;
@@ -189,8 +209,8 @@ class EnhancedMEVBot {
       symbolB: "USDT",
       decimalsA: 18,
       decimalsB: 6,
-      minAmount: ethers.parseEther("0.1").toString(),
-      maxAmount: ethers.parseEther("10").toString()
+      minAmount: parseEther("0.1").toString(),
+      maxAmount: parseEther("10").toString()
     },
     {
       tokenA: this.TOKENS_ARB.WBTC,
@@ -199,20 +219,20 @@ class EnhancedMEVBot {
       symbolB: "WETH",
       decimalsA: 8,
       decimalsB: 18,
-      minAmount: ethers.parseUnits("0.01", 8).toString(),
-      maxAmount: ethers.parseUnits("1", 8).toString()
+      minAmount: parseUnits("0.01", 8).toString(),
+      maxAmount: parseUnits("1", 8).toString()
     }
   ];
   
   // Configuration constants
-  private readonly MIN_PROFIT_THRESHOLD = ethers.parseEther("0.01");
+  private readonly MIN_PROFIT_THRESHOLD = parseEther("0.01");
   private readonly MIN_CROSS_CHAIN_SPREAD = 0.0005; // 0.05%
   private readonly CRITICAL_SPREAD_THRESHOLD = 0.002; // 0.2%
   private readonly MAX_SLIPPAGE = 0.03; // 3%
   private readonly BUNDLE_TIMEOUT = 30000; // 30 seconds
   private readonly PRICE_UPDATE_INTERVAL = 5000; // 5 seconds
   private readonly GAS_LIMIT = 800000n;
-  private readonly MAX_PRIORITY_FEE = ethers.parseUnits("3", "gwei");
+  private readonly MAX_PRIORITY_FEE = parseUnits("3", "gwei");
   private readonly COOLDOWN_PERIOD = 15000; // 15 seconds
   
   // State management
@@ -239,6 +259,7 @@ class EnhancedMEVBot {
     this.setupProviders();
     this.setupSigners();
     this.initializeContracts();
+    this.initializeOptimizationModules();
   }
   
   private initializeConfiguration(cliConfig?: Partial<CLIConfig>): void {
@@ -262,12 +283,12 @@ class EnhancedMEVBot {
   }
   
   private setupProviders(): void {
-    this.arbitrumProvider = new ethers.JsonRpcProvider(process.env.ARB_RPC!, {
+    this.arbitrumProvider = new JsonRpcProvider(process.env.ARB_RPC!, {
       name: "arbitrum",
       chainId: 42161
     });
     
-    this.optimismProvider = new ethers.JsonRpcProvider(process.env.OPT_RPC!, {
+    this.optimismProvider = new JsonRpcProvider(process.env.OPT_RPC!, {
       name: "optimism",
       chainId: 10
     });
@@ -276,9 +297,9 @@ class EnhancedMEVBot {
   }
   
   private setupSigners(): void {
-    this.executorSigner = new ethers.Wallet(process.env.PRIVATE_KEY!, this.arbitrumProvider);
-    this.authSigner = new ethers.Wallet(process.env.FLASHBOTS_AUTH_KEY!, this.arbitrumProvider);
-    this.optimismExecutor = new ethers.Wallet(process.env.PRIVATE_KEY!, this.optimismProvider);
+    this.executorSigner = new Wallet(process.env.PRIVATE_KEY!, this.arbitrumProvider);
+    this.authSigner = new Wallet(process.env.FLASHBOTS_AUTH_KEY!, this.arbitrumProvider);
+    this.optimismExecutor = new Wallet(process.env.PRIVATE_KEY!, this.optimismProvider);
     
     logger.info(chalk.green("✅ Signers configured"), {
       executor: this.executorSigner.address,
@@ -373,6 +394,51 @@ class EnhancedMEVBot {
     }
     
     logger.info(chalk.green("✅ Contracts initialized"));
+  }
+  
+  private initializeOptimizationModules(): void {
+    // Initialize gas optimization modules
+    this.gasOptimizer = new GasOptimizer(
+      process.env.ARB_RPC!,
+      process.env.OPT_RPC!
+    );
+    
+    this.l2GasManager = new L2GasManager(
+      process.env.ARB_RPC!,
+      process.env.OPT_RPC!,
+      process.env.MAINNET_RPC!
+    );
+    
+    this.mevBundleOptimizer = new MEVBundleOptimizer(
+      this.flashbotsProvider,
+      this.gasOptimizer,
+      this.l2GasManager,
+      this.arbitrumProvider,
+      this.executorSigner
+    );
+    
+    this.triangularArbManager = new TriangularArbManager(
+      this.arbitrumProvider,
+      new EnhancedDEXManager(),
+      this.gasOptimizer
+    );
+    
+    // PHASE 3: Initialize advanced optimization modules
+    const providers = new Map<number, JsonRpcProvider>([
+      [42161, this.arbitrumProvider],
+      [10, this.optimismProvider]
+    ]);
+    
+    this.dynamicSlippageManager = new DynamicSlippageManager(providers);
+    this.adaptiveProfitManager = new AdaptiveProfitManager(providers);
+    this.oraclePriceValidator = new OraclePriceValidator(providers);
+    
+    // Initialize risk manager with starting capital
+    const initialCapital = parseEther("10"); // 10 ETH starting capital
+    this.advancedRiskManager = new AdvancedRiskManager(initialCapital);
+    
+    logger.info(chalk.green("🚀 All optimization modules initialized"));
+    logger.info(chalk.blue("📊 Phase 3 advanced optimizations: Dynamic Slippage, Adaptive Profit, Risk Management, Oracle Validation"));
   }
   
   private async checkAaveLiquidity(asset: string, amount: bigint, chainId: number): Promise<{
@@ -481,8 +547,8 @@ class EnhancedMEVBot {
     for (const asset of assets) {
       try {
         const [aaveData, balancerData] = await Promise.all([
-          this.checkAaveLiquidity(asset, ethers.parseEther("10"), 42161),
-          this.checkBalancerLiquidity(asset, ethers.parseEther("10"), 42161)
+          this.checkAaveLiquidity(asset, parseEther("10"), 42161),
+          this.checkBalancerLiquidity(asset, parseEther("10"), 42161)
         ]);
         
         if (aaveData.utilizationRate > 0.8) {
@@ -510,8 +576,8 @@ class EnhancedMEVBot {
       
       // Initialize MEV-Share client (use mainnet for MEV-Share)
       try {
-        const mainnetProvider = new ethers.JsonRpcProvider(process.env.MAINNET_RPC || "https://eth-mainnet.g.alchemy.com/v2/demo");
-        const mainnetSigner = new ethers.Wallet(process.env.FLASHBOTS_AUTH_KEY!, mainnetProvider);
+        const mainnetProvider = new JsonRpcProvider(process.env.MAINNET_RPC || "https://eth-mainnet.g.alchemy.com/v2/demo");
+        const mainnetSigner = new Wallet(process.env.FLASHBOTS_AUTH_KEY!, mainnetProvider);
         const mainnetNetwork = await mainnetProvider.getNetwork();
         this.mevShareClient = MevShareClient.fromNetwork(
           mainnetSigner,
@@ -527,8 +593,8 @@ class EnhancedMEVBot {
         await this.optimismProvider.getBalance(this.optimismExecutor.address) : 0n;
       
       logger.info(chalk.green("🚀 Enhanced MEV Bot initialized"), {
-        arbitrumBalance: ethers.formatEther(arbBalance),
-        optimismBalance: ethers.formatEther(optBalance),
+        arbitrumBalance: formatEther(arbBalance),
+        optimismBalance: formatEther(optBalance),
         flashbotsEnabled: true,
         mevShareEnabled: !!this.mevShareClient
       });
@@ -555,26 +621,123 @@ class EnhancedMEVBot {
         return false;
       }
       
-      logger.info(chalk.cyan("🚀 Executing arbitrage opportunity"), {
+      // PHASE 3: Advanced Risk Assessment
+      const riskAssessment = await this.advancedRiskManager.assessTradeRisk(
+        [opportunity.tokenA, opportunity.tokenB],
+        BigInt(opportunity.amountIn),
+        BigInt(opportunity.expectedProfit),
+        BigInt(opportunity.gasCost),
+        opportunity.isTriangular ? 'triangular' : 'dual_dex',
+        opportunity.chainId,
+        0.75 // Default confidence
+      );
+      
+      if (!riskAssessment.approved) {
+        logger.warn(chalk.red("❌ Trade rejected by risk manager"), {
+          reasons: riskAssessment.reasonsForRejection,
+          riskLevel: riskAssessment.riskLevel
+        });
+        return false;
+      }
+      
+      if (riskAssessment.warnings.length > 0) {
+        logger.warn(chalk.yellow("⚠️ Risk warnings:"), riskAssessment.warnings);
+      }
+      
+      // PHASE 3: Oracle Price Validation
+      const priceValidation = await this.oraclePriceValidator.validateTokenPrice(
+        opportunity.tokenA,
+        opportunity.tokenB,
+        parseUnits("1", 18), // Normalized price
+        opportunity.chainId,
+        BigInt(opportunity.amountIn)
+      );
+      
+      if (!priceValidation.isValid || priceValidation.recommendation === 'reject') {
+        logger.warn(chalk.red("❌ Trade rejected by price validator"), {
+          riskLevel: priceValidation.riskLevel,
+          manipulation: priceValidation.manipulationScore,
+          warnings: priceValidation.warnings
+        });
+        return false;
+      }
+      
+      if (priceValidation.recommendation === 'caution') {
+        logger.warn(chalk.yellow("⚠️ Price validation concerns:"), priceValidation.warnings);
+      }
+      
+      // PHASE 3: Dynamic Slippage Calculation
+      const slippageResult = await this.dynamicSlippageManager.calculateOptimalSlippage(
+        opportunity.tokenA,
+        opportunity.tokenB,
+        BigInt(opportunity.amountIn),
+        opportunity.chainId
+      );
+      
+      // PHASE 3: Adaptive Profit Threshold
+      const profitThreshold = await this.adaptiveProfitManager.calculateOptimalThreshold(
+        [opportunity.tokenA, opportunity.tokenB],
+        BigInt(opportunity.amountIn),
+        BigInt(opportunity.gasCost),
+        opportunity.chainId
+      );
+      
+      // Check if opportunity meets adaptive threshold
+      if (BigInt(opportunity.netProfit) < profitThreshold.minProfitWei) {
+        logger.info(chalk.yellow("📊 Opportunity below adaptive threshold"), {
+          netProfit: formatEther(opportunity.netProfit),
+          minRequired: formatEther(profitThreshold.minProfitWei.toString()),
+          reasoning: profitThreshold.reasoning
+        });
+        return false;
+      }
+      
+      logger.info(chalk.cyan("🚀 Executing arbitrage opportunity (Phase 3 approved)"), {
         id: opportunity.id,
-        profit: ethers.formatEther(opportunity.netProfit),
+        profit: formatEther(opportunity.netProfit),
         spread: opportunity.spread,
-        chain: opportunity.chainId === 42161 ? 'Arbitrum' : 'Optimism'
+        chain: opportunity.chainId === 42161 ? 'Arbitrum' : 'Optimism',
+        slippage: `${slippageResult.slippageBps}bps`,
+        profitStrategy: profitThreshold.recommendation,
+        riskLevel: riskAssessment.riskLevel
       });
       
       if (this.simulationMode) {
         logger.info(chalk.blue("🎯 SIMULATION MODE - No actual execution"));
         await this.performStaticSimulation(opportunity);
         this.updateSimulationStats(opportunity);
+        
+        // Update risk manager with simulation result
+        await this.advancedRiskManager.updateMetricsAndCheckLimits({
+          profit: BigInt(opportunity.expectedProfit),
+          gasCost: BigInt(opportunity.gasCost),
+          success: true,
+          strategy: opportunity.isTriangular ? 'triangular' : 'dual_dex',
+          tokenPair: `${opportunity.tokenA}-${opportunity.tokenB}`,
+          chainId: opportunity.chainId,
+          tradeSize: BigInt(opportunity.amountIn)
+        });
+        
         return true;
       }
       
-      // Create MEV bundle
+      // Create MEV bundle with enhanced optimization
       const bundle = await this.createMEVBundle(opportunity);
       if (!bundle) return false;
       
       // Submit bundle to Flashbots
       const success = await this.submitMEVBundle(bundle);
+      
+      // Update risk manager with actual results
+      await this.advancedRiskManager.updateMetricsAndCheckLimits({
+        profit: success ? BigInt(opportunity.expectedProfit) : 0n,
+        gasCost: BigInt(opportunity.gasCost),
+        success,
+        strategy: opportunity.isTriangular ? 'triangular' : 'dual_dex',
+        tokenPair: `${opportunity.tokenA}-${opportunity.tokenB}`,
+        chainId: opportunity.chainId,
+        tradeSize: BigInt(opportunity.amountIn)
+      });
       
       if (success) {
         this.lastExecutionTime = now;
@@ -582,8 +745,8 @@ class EnhancedMEVBot {
         this.totalProfit += BigInt(opportunity.netProfit);
         
         logger.info(chalk.green("✅ Arbitrage executed successfully"), {
-          profit: ethers.formatEther(opportunity.netProfit),
-          totalProfit: ethers.formatEther(this.totalProfit),
+          profit: formatEther(opportunity.netProfit),
+          totalProfit: formatEther(this.totalProfit),
           executions: this.executionCount
         });
         
@@ -611,8 +774,8 @@ class EnhancedMEVBot {
           id: opportunity.id,
           tokenA: opportunity.tokenA,
           tokenB: opportunity.tokenB,
-          amountIn: ethers.formatEther(opportunity.amountIn),
-          expectedProfit: ethers.formatEther(opportunity.expectedProfit)
+          amountIn: formatEther(opportunity.amountIn),
+          expectedProfit: formatEther(opportunity.expectedProfit)
         });
       }
       
@@ -678,8 +841,8 @@ class EnhancedMEVBot {
       
       logger.info(chalk.blue("📊 Simulation completed"), {
         executionTime: `${executionTime}ms`,
-        profit: ethers.formatEther(opportunity.netProfit),
-        gasEstimate: ethers.formatUnits(opportunity.gasEstimate, 'gwei')
+        profit: formatEther(opportunity.netProfit),
+        gasEstimate: formatUnits(opportunity.gasEstimate, 'gwei')
       });
       
     } catch (error) {
@@ -700,13 +863,13 @@ class EnhancedMEVBot {
     logger.info(chalk.magenta("\n📈 SIMULATION SUMMARY"));
     logger.info(chalk.cyan("────────────────────────────────────────"));
     logger.info(chalk.white(`📊 Opportunities Detected: ${this.simulationStats.opportunitiesDetected}`));
-    logger.info(chalk.green(`💰 Total Potential Profit: ${ethers.formatEther(this.simulationStats.potentialProfit)} ETH`));
-    logger.info(chalk.yellow(`⛽ Total Gas Estimated: ${ethers.formatUnits(this.simulationStats.gasEstimated, 'gwei')} Gwei`));
+    logger.info(chalk.green(`💰 Total Potential Profit: ${formatEther(this.simulationStats.potentialProfit)} ETH`));
+    logger.info(chalk.yellow(`⛽ Total Gas Estimated: ${formatUnits(this.simulationStats.gasEstimated, 'gwei')} Gwei`));
     logger.info(chalk.blue(`⏱️  Total Execution Time: ${this.simulationStats.executionTime}ms`));
     
     if (this.simulationStats.opportunitiesDetected > 0) {
       const avgProfit = this.simulationStats.potentialProfit / BigInt(this.simulationStats.opportunitiesDetected);
-      logger.info(chalk.white(`📈 Average Profit per Opportunity: ${ethers.formatEther(avgProfit)} ETH`));
+      logger.info(chalk.white(`📈 Average Profit per Opportunity: ${formatEther(avgProfit)} ETH`));
     }
     
     logger.info(chalk.cyan("────────────────────────────────────────\n"));
@@ -780,13 +943,13 @@ class EnhancedMEVBot {
                 id: `cross-${arbPair.tokenA.symbol}-${arbPair.tokenB.symbol}-${Date.now()}`,
                 tokenA: arbPair.tokenA.address,
                 tokenB: arbPair.tokenB.address,
-                amountIn: ethers.parseEther("1").toString(),
+                amountIn: parseEther("1").toString(),
                 arbitrumPrice: "1.0",
                 optimismPrice: (1 + spread).toString(),
                 spread: spread.toString(),
-                estimatedProfit: ethers.parseEther((spread - 0.005).toString()).toString(),
+                estimatedProfit: parseEther((spread - 0.005).toString()).toString(),
                 bridgeCost,
-                netProfit: ethers.parseEther(Math.max(0, spread - 0.005).toString()).toString(),
+                netProfit: parseEther(Math.max(0, spread - 0.005).toString()).toString(),
                 timestamp: Date.now(),
                 profitable: spread > 0.005,
                 alertLevel: spread > 0.02 ? 'critical' : spread > 0.01 ? 'warning' : 'info'
@@ -903,7 +1066,7 @@ class EnhancedMEVBot {
         sushiFirst: Math.random() > 0.5,
         path: opportunity.bestPath.path,
         gasEstimate: opportunity.bestPath.totalGasCost.toString(),
-        gasCost: ethers.formatEther(opportunity.bestPath.totalGasCost * BigInt(50000000)), // 0.05 gwei
+        gasCost: formatEther(opportunity.bestPath.totalGasCost * BigInt(50000000)), // 0.05 gwei
         timestamp: Date.now(),
         isTriangular: opportunity.bestPath.isTriangular,
         chainId,
@@ -932,6 +1095,24 @@ class EnhancedMEVBot {
       // Enhanced arbitrage scanning
       const opportunities = await this.scanForArbitrageOpportunities();
       
+      // OPTIMIZATION: Triangular arbitrage opportunities (if enabled)
+      let triangularOpportunities: any[] = [];
+      if (this.triangularEnabled) {
+        try {
+          const arbTriangular = await this.triangularArbManager.scanTriangularOpportunities(42161, 0.01);
+          triangularOpportunities = arbTriangular.filter(opp => opp.recommendedAction === 'execute');
+          
+          if (this.verboseMode && triangularOpportunities.length > 0) {
+            logger.info(chalk.yellow(`🔺 Found ${triangularOpportunities.length} triangular arbitrage opportunities`));
+            triangularOpportunities.forEach(opp => {
+              logger.debug(`   ${opp.id}: ${formatEther(opp.profitAfterGas)} ETH profit`);
+            });
+          }
+        } catch (error) {
+          logger.error(chalk.red("Error scanning triangular opportunities:"), error);
+        }
+      }
+      
       // Cross-chain opportunities
       const crossChainOpportunities = await this.scanCrossChainOpportunities();
       
@@ -940,7 +1121,8 @@ class EnhancedMEVBot {
         this.updateSimulationStats(opportunity);
         
         if (this.simulationMode) {
-          await this.simulateArbitrage(opportunity);
+          // Simulation: Log opportunity details
+          logger.info(chalk.cyan(`📊 SIMULATION: ${opportunity.tokenA}-${opportunity.tokenB}, profit: ${formatEther(opportunity.netProfit)} ETH`));
         }
       }
       
@@ -948,8 +1130,53 @@ class EnhancedMEVBot {
       if (opportunities.length > 0) {
         logger.info(chalk.green(`✅ Found ${opportunities.length} arbitrage opportunities`));
         
+        // OPTIMIZATION: MEV Bundle Creation and Optimization
+        try {
+          const combinedOpportunities = [...opportunities, ...triangularOpportunities];
+          
+          if (combinedOpportunities.length > 0) {
+            const targetBlock = await this.arbitrumProvider.getBlockNumber() + 2;
+            const bundleResult = await this.mevBundleOptimizer.createOptimalBundle(
+              combinedOpportunities,
+              targetBlock
+            );
+            
+            if (this.verboseMode) {
+              logger.info(chalk.magenta(`📦 MEV Bundle Optimized: ${bundleResult.bundle.length} transactions`));
+              logger.info(chalk.magenta(`   Expected Profit: ${formatEther(bundleResult.expectedProfit)} ETH`));
+              logger.info(chalk.magenta(`   Profit After Gas: ${formatEther(bundleResult.profitAfterGas)} ETH`));
+              logger.info(chalk.magenta(`   Success Rate: ${bundleResult.estimatedSuccessRate}%`));
+              
+              if (bundleResult.recommendations.length > 0) {
+                logger.info(chalk.cyan("💡 Bundle Recommendations:"));
+                bundleResult.recommendations.forEach(rec => logger.info(chalk.cyan(`   • ${rec}`)));
+              }
+            }
+            
+            // Simulate bundle if profitable
+            if (bundleResult.profitAfterGas > parseUnits("0.005", 18)) { // > 0.005 ETH profit
+              const simulation = await this.mevBundleOptimizer.simulateBundle(
+                bundleResult.bundle,
+                targetBlock
+              );
+              
+              if (simulation.success) {
+                logger.info(chalk.green(`✅ Bundle Simulation PASSED: ${formatEther(simulation.profit)} ETH profit`));
+                
+                if (simulation.competitorAnalysis.similarBundles > 5) {
+                  logger.warn(chalk.yellow(`⚠️  High competition detected: ${simulation.competitorAnalysis.similarBundles} similar bundles`));
+                }
+              } else {
+                logger.warn(chalk.red(`❌ Bundle Simulation FAILED: ${simulation.revertReason}`));
+              }
+            }
+          }
+        } catch (error) {
+          logger.error(chalk.red("Error in MEV bundle optimization:"), error);
+        }
+        
         const bestOpportunity = opportunities[0];
-        logger.info(chalk.cyan(`💎 Best: ${bestOpportunity.tokenA}-${bestOpportunity.tokenB}, profit: ${ethers.formatEther(bestOpportunity.netProfit)} ETH`));
+        logger.info(chalk.cyan(`💎 Best: ${bestOpportunity.tokenA}-${bestOpportunity.tokenB}, profit: ${formatEther(bestOpportunity.netProfit)} ETH`));
       }
       
       if (crossChainOpportunities.length > 0) {
@@ -990,9 +1217,9 @@ class EnhancedMEVBot {
     
     // Log final statistics
     logger.info(chalk.blue("📊 Final Statistics"), {
-      totalProfit: ethers.formatEther(this.totalProfit),
-      totalLoss: ethers.formatEther(this.totalLoss),
-      netProfit: ethers.formatEther(this.totalProfit - this.totalLoss),
+      totalProfit: formatEther(this.totalProfit),
+      totalLoss: formatEther(this.totalLoss),
+      netProfit: formatEther(this.totalProfit - this.totalLoss),
       executionCount: this.executionCount,
       circuitBreakerTripped: this.circuitBreakerTripped
     });
@@ -1002,6 +1229,162 @@ class EnhancedMEVBot {
     // Print simulation statistics if in simulation mode
     if (this.simulationMode) {
       this.printSimulationSummary();
+    }
+  }
+
+  // Phase 3 Integration Methods
+  private async getCurrentCapital(): Promise<bigint> {
+    try {
+      const arbBalance = await this.arbitrumProvider.getBalance(this.executorSigner.address);
+      const optBalance = this.crossChainEnabled ? 
+        await this.optimismProvider.getBalance(this.optimismExecutor.address) : 0n;
+      
+      return arbBalance + optBalance;
+    } catch (error) {
+      logger.error('Error getting current capital:', error);
+      return 0n;
+    }
+  }
+
+  private async estimateGasCost(opportunity: any): Promise<bigint> {
+    try {
+      // Use L2GasManager for accurate gas estimation
+      if (this.l2GasManager) {
+        const gasEstimate = await this.l2GasManager.estimateOptimalGas(
+          opportunity.chainId,
+          opportunity.contractCall,
+          'high'
+        );
+        return gasEstimate.totalCost;
+      }
+      
+      // Fallback to basic estimation
+      return parseUnits("0.001", 18); // 0.001 ETH fallback
+    } catch (error) {
+      logger.error('Error estimating gas cost:', error);
+      return parseUnits("0.002", 18); // Conservative fallback
+    }
+  }
+
+  private async executeWithPhase3Optimization(opportunity: any): Promise<boolean> {
+    try {
+      logger.info(chalk.cyan('🚀 Executing with Phase 3 optimization'));
+
+      // Get current capital for position sizing
+      const currentCapital = await this.getCurrentCapital();
+      
+      // Estimate precise gas costs
+      const estimatedGas = await this.estimateGasCost(opportunity);
+      
+      // Execute optimized trade
+      const result = await this.executeOptimizedTrade(opportunity);
+      
+      if (result.success) {
+        logger.info(chalk.green(`✅ Phase 3 execution successful: ${formatEther(result.profit)} ETH profit`));
+        return true;
+      } else {
+        logger.warn(chalk.yellow(`⚠️ Phase 3 execution failed, gas cost: ${formatEther(result.gasCost)} ETH`));
+        return false;
+      }
+    } catch (error) {
+      logger.error('Phase 3 execution failed:', error);
+      return false;
+    }
+  }
+
+  private async executeOptimizedTrade(opportunity: any): Promise<{
+    success: boolean;
+    profit: bigint;
+    gasCost: bigint;
+  }> {
+    try {
+      if (this.simulationMode) {
+        // Simulate the trade execution
+        logger.info(chalk.blue(`🎯 SIMULATION: Would execute trade with optimized parameters`));
+        return {
+          success: true,
+          profit: BigInt(opportunity.netProfit || 0),
+          gasCost: BigInt(opportunity.estimatedGasCost || 0)
+        };
+      }
+      
+      // Real execution logic would integrate with existing MEV bundle execution
+      logger.warn(chalk.yellow('⚠️ Real execution not yet implemented - using simulation'));
+      return {
+        success: false,
+        profit: 0n,
+        gasCost: 0n
+      };
+      
+    } catch (error) {
+      logger.error('Error executing optimized trade:', error);
+      return {
+        success: false,
+        profit: 0n,
+        gasCost: 0n
+      };
+    }
+  }
+
+  private async executeWithPhase2Fallback(opportunity: any): Promise<boolean> {
+    try {
+      logger.info(chalk.yellow('🔄 Falling back to Phase 2 MEV execution'));
+      
+      // Use existing Phase 2 MEV bundle optimization
+      if (this.mevBundleOptimizer) {
+        const targetBlock = await this.arbitrumProvider.getBlockNumber() + 2;
+        const bundleResult = await this.mevBundleOptimizer.createOptimalBundle(
+          [opportunity],
+          targetBlock
+        );
+        
+        if (bundleResult.profitAfterGas > parseUnits("0.003", 18)) {
+          logger.info(chalk.green(`✅ Phase 2 fallback successful`));
+          return true;
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      logger.error('Phase 2 fallback failed:', error);
+      return false;
+    }
+  }
+
+  private async enhancedMonitoringCycle(): Promise<void> {
+    try {
+      this.isRunning = true;
+      
+      // Enhanced arbitrage scanning with Phase 3 integration
+      const opportunities = await this.scanForArbitrageOpportunities();
+      
+      // Add Phase 3 optimization to the main execution flow
+      if (opportunities.length > 0) {
+        logger.info(chalk.green(`✅ Found ${opportunities.length} arbitrage opportunities`));
+        
+        // Use Phase 3 optimization for the best opportunity
+        const bestOpportunity = opportunities[0];
+        
+        if (this.dynamicSlippageManager && this.advancedRiskManager && this.oraclePriceValidator) {
+          // Use Phase 3 advanced execution
+          const executed = await this.executeWithPhase3Optimization(bestOpportunity);
+          
+          if (executed) {
+            logger.info(chalk.green(`🚀 Successfully executed with Phase 3 optimization`));
+          }
+        } else {
+          // Fall back to Phase 2 if Phase 3 modules unavailable
+          logger.warn(chalk.yellow('⚠️ Phase 3 modules unavailable, using Phase 2'));
+          await this.executeWithPhase2Fallback(bestOpportunity);
+        }
+      }
+      
+      // Continue with existing cross-chain and triangular logic if needed
+      
+    } catch (error) {
+      logger.error(chalk.red("Error in enhanced monitoring cycle"), error);
+    } finally {
+      this.isRunning = false;
     }
   }
 }

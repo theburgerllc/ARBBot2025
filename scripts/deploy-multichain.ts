@@ -1,4 +1,5 @@
 import hre from "hardhat";
+import { formatEther } from "ethers";
 import { writeFileSync } from "fs";
 import chalk from "chalk";
 
@@ -10,7 +11,7 @@ async function deployToNetwork(networkName: string, addresses: any) {
   console.log(chalk.green(`Deploying with account: ${deployer.address}`));
   
   const balance = await deployer.provider.getBalance(deployer.address);
-  console.log(chalk.green(`Account balance: ${hre.ethers.formatEther(balance)} ETH`));
+  console.log(chalk.green(`Account balance: ${formatEther(balance)} ETH`));
   
   // Deploy the FlashArbBotBalancer contract
   const FlashArbBotBalancer = await hre.ethers.getContractFactory("FlashArbBotBalancer");

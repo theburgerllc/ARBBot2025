@@ -14,8 +14,8 @@ const path_1 = __importDefault(require("path"));
  * Provides interactive setup with guided prompts
  */
 class QuickSetup {
+    envPath = path_1.default.join(process.cwd(), '.env');
     constructor() {
-        this.envPath = path_1.default.join(process.cwd(), '.env');
         this.displayHeader();
     }
     displayHeader() {

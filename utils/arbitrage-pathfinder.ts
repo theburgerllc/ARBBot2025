@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, JsonRpcProvider, parseEther } from "ethers";
 import { DEXRouter, EnhancedDEXManager } from "./dex-routers";
 import { VolatileToken, TokenPair, VolatileTokenTracker } from "./volatile-tokens";
 
@@ -40,11 +40,11 @@ export interface ArbitrageOpportunity {
 
 export class EnhancedArbitragePathfinder {
   
-  private providers: Map<number, ethers.JsonRpcProvider>;
+  private providers: Map<number, JsonRpcProvider>;
   private routerCache: Map<number, DEXRouter[]>;
   private tokenGraph: Map<string, ArbitrageEdge[]>;
   
-  constructor(providers: Map<number, ethers.JsonRpcProvider>) {
+  constructor(providers: Map<number, JsonRpcProvider>) {
     this.providers = providers;
     this.routerCache = new Map();
     this.tokenGraph = new Map();
@@ -89,7 +89,7 @@ export class EnhancedArbitragePathfinder {
             paths: allPaths,
             bestPath,
             tokenPair: pair,
-            amountIn: ethers.parseEther("1"), // Base amount for calculation
+            amountIn: parseEther("1"), // Base amount for calculation
             expectedAmountOut: bestPath.estimatedProfit,
             netProfit: bestPath.estimatedProfit,
             confidence: this.calculateConfidence(bestPath),
@@ -405,7 +405,7 @@ export class EnhancedArbitragePathfinder {
       }
       
       const profitMargin = totalRate - 1 - totalFees;
-      const estimatedProfit = ethers.parseEther(Math.max(0, profitMargin).toString());
+      const estimatedProfit = parseEther(Math.max(0, profitMargin).toString());
       
       return {
         path: tokenPath,
@@ -462,7 +462,7 @@ export class EnhancedArbitragePathfinder {
           totalRate,
           totalFees,
           totalGasCost,
-          estimatedProfit: ethers.parseEther(Math.max(0, profitMargin).toString()),
+          estimatedProfit: parseEther(Math.max(0, profitMargin).toString()),
           profitMargin,
           isTriangular: true,
           complexity: path.length
@@ -510,7 +510,7 @@ export class EnhancedArbitragePathfinder {
         totalRate,
         totalFees,
         totalGasCost,
-        estimatedProfit: ethers.parseEther(Math.max(0, profitMargin).toString()),
+        estimatedProfit: parseEther(Math.max(0, profitMargin).toString()),
         profitMargin,
         isTriangular: path[0] === path[path.length - 1],
         complexity: edges.length
@@ -600,6 +600,6 @@ export class EnhancedArbitragePathfinder {
   private estimateLiquidityDepth(tokenA: VolatileToken, tokenB: VolatileToken, router: DEXRouter): bigint {
     // Mock liquidity estimation
     const baseDepth = router.liquidityScore * 100000;
-    return ethers.parseEther(baseDepth.toString());
+    return parseEther(baseDepth.toString());
   }
 }

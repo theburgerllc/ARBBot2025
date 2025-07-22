@@ -1,6 +1,5 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const hardhat_1 = require("hardhat");
 const networkConfigs = {
     arbitrum: {
         balancerVault: "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
@@ -29,11 +28,11 @@ async function main() {
         throw new Error(`Network ${network} not supported. Use 'arbitrum' or 'optimism'`);
     }
     const config = networkConfigs[network];
-    const [deployer] = await hardhat_1.ethers.getSigners();
+    const [deployer] = await ethers.getSigners();
     console.log(`📝 Deploying with account: ${deployer.address}`);
-    console.log(`💰 Account balance: ${hardhat_1.ethers.formatEther(await deployer.provider.getBalance(deployer.address))} ETH`);
+    console.log(`💰 Account balance: ${ethers.formatEther(await deployer.provider.getBalance(deployer.address))} ETH`);
     // Verify network
-    const networkData = await hardhat_1.ethers.provider.getNetwork();
+    const networkData = await ethers.provider.getNetwork();
     if (Number(networkData.chainId) !== config.chainId) {
         throw new Error(`Network mismatch! Expected chain ID ${config.chainId}, got ${networkData.chainId}`);
     }
@@ -56,7 +55,7 @@ async function main() {
         { name: "USDC", address: config.usdc }
     ];
     for (const contract of contracts) {
-        const code = await hardhat_1.ethers.provider.getCode(contract.address);
+        const code = await ethers.provider.getCode(contract.address);
         if (code === "0x") {
             throw new Error(`Contract ${contract.name} not found at ${contract.address}`);
         }
@@ -64,7 +63,7 @@ async function main() {
     }
     // Deploy the flash arbitrage bot
     console.log(`\n📦 Deploying FlashArbBotBalancer...`);
-    const Factory = await hardhat_1.ethers.getContractFactory("FlashArbBotBalancer");
+    const Factory = await ethers.getContractFactory("FlashArbBotBalancer");
     const bot = await Factory.deploy(config.balancerVault, config.sushiRouter, config.uniswapV2Router, config.uniswapV3Quoter);
     console.log(`⏳ Waiting for deployment confirmation...`);
     await bot.waitForDeployment();
@@ -92,9 +91,9 @@ async function main() {
         console.log(`   ✅ Min Profit BPS: ${minProfitBps} (${Number(minProfitBps) / 100}%)`);
         // Test simulation
         const path = [config.weth, config.usdc];
-        const amount = hardhat_1.ethers.parseEther("1");
+        const amount = ethers.parseEther("1");
         const profit = await bot.simulateArbitrage(config.weth, amount, path, true);
-        console.log(`   ✅ Simulation test: ${hardhat_1.ethers.formatEther(profit)} ETH profit`);
+        console.log(`   ✅ Simulation test: ${ethers.formatEther(profit)} ETH profit`);
     }
     catch (error) {
         console.log(`   ⚠️  Basic functionality test failed: ${error.message}`);

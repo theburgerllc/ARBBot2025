@@ -21,7 +21,7 @@ export interface TokenPair {
 export class VolatileTokenTracker {
   
   // High-volatility token database with addresses
-  private static readonly VOLATILE_TOKENS = {
+  private static readonly VOLATILE_TOKENS: Record<number, Array<{symbol: string; address: string; baseVolatility: number}>> = {
     // Arbitrum (42161)
     42161: [
       {
@@ -234,8 +234,8 @@ export class VolatileTokenTracker {
     
     // Create priority pairs first (stablecore + volatile pairs)
     for (const [symbolA, symbolB] of priorityPairs) {
-      const tokenA = tokens.find(t => t.symbol === symbolA);
-      const tokenB = tokens.find(t => t.symbol === symbolB);
+      const tokenA = tokens.find((t: {symbol: string; address: string; baseVolatility: number}) => t.symbol === symbolA);
+      const tokenB = tokens.find((t: {symbol: string; address: string; baseVolatility: number}) => t.symbol === symbolB);
       
       if (tokenA && tokenB) {
         pairs.push({
@@ -249,9 +249,9 @@ export class VolatileTokenTracker {
     
     // Add triangular arbitrage pairs: ETH → volatile → stable → ETH
     for (const [symbolA, symbolB, symbolC] of triangularPaths) {
-      const tokenA = tokens.find(t => t.symbol === symbolA);
-      const tokenB = tokens.find(t => t.symbol === symbolB); 
-      const tokenC = tokens.find(t => t.symbol === symbolC);
+      const tokenA = tokens.find((t: {symbol: string; address: string; baseVolatility: number}) => t.symbol === symbolA);
+      const tokenB = tokens.find((t: {symbol: string; address: string; baseVolatility: number}) => t.symbol === symbolB); 
+      const tokenC = tokens.find((t: {symbol: string; address: string; baseVolatility: number}) => t.symbol === symbolC);
       
       if (tokenA && tokenB && tokenC) {
         // Create triangular path as composite pair
@@ -336,7 +336,7 @@ export class VolatileTokenTracker {
       const volatilityData: { [symbol: string]: number } = {};
       
       // Simulate API call with realistic volatility data
-      const baseVolatilities = {
+      const baseVolatilities: Record<string, number> = {
         "ETH": 0.15,
         "BTC": 0.18,
         "USDT": 0.01,
