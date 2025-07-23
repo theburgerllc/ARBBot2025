@@ -22,6 +22,12 @@ interface SystemMetrics {
   networkLatencyMs: number;
 }
 
+interface Alert {
+  title: string;
+  message: string;
+  urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+}
+
 interface AlertThresholds {
   criticalDrawdown: number;
   lowSuccessRate: number;
@@ -44,7 +50,7 @@ export class ProductionMonitor {
   private metrics!: SystemMetrics;
   private alertThresholds!: AlertThresholds;
   private tradeHistory: TradeRecord[] = [];
-  private logger: winston.Logger;
+  private logger!: winston.Logger;
   private startTime: number;
 
   constructor() {
@@ -147,7 +153,7 @@ export class ProductionMonitor {
   }
 
   private async checkCriticalAlerts(): Promise<void> {
-    const alerts = [];
+    const alerts: Alert[] = [];
 
     // Check drawdown
     if (this.metrics.currentDrawdown > this.alertThresholds.criticalDrawdown) {
@@ -191,7 +197,7 @@ export class ProductionMonitor {
     }
   }
 
-  private async sendAlert(alert: any): Promise<void> {
+  private async sendAlert(alert: Alert): Promise<void> {
     const alertData = {
       ...alert,
       timestamp: new Date().toISOString(),

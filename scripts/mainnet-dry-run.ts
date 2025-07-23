@@ -750,8 +750,8 @@ class DryRunOrchestrator {
         ]);
         
         this.dynamicSlippage = new DynamicSlippageManager(providers);
-        this.adaptiveProfit = new AdaptiveProfitManager();
-        this.riskManager = new AdvancedRiskManager();
+        this.adaptiveProfit = new AdaptiveProfitManager(providers);
+        this.riskManager = new AdvancedRiskManager(parseEther("100")); // 100 ETH initial capital
         this.oracleValidator = new OraclePriceValidator(providers);
         
         console.log(chalk.green('✅ Phase 3 optimization modules initialized'));
