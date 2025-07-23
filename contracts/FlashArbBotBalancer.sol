@@ -142,6 +142,12 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     mapping(address => address) public priceFeeds;
     mapping(address => bool) public authorizedCallers;
     
+    // Gas funding configuration
+    address public gasFundingWallet;
+    uint256 public gasFundingPercentage = 1000; // 10% in basis points (10% = 1000 bps)
+    uint256 public constant MAX_GAS_FUNDING_PERCENTAGE = 5000; // 50% maximum
+    uint256 public totalGasFundingTransferred;
+    
     enum FlashLoanProvider { BALANCER, AAVE }
     
     // GAS OPTIMIZATION: Packed struct for parameter passing
@@ -189,6 +195,17 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     );
     
     event ProfitWithdrawn(address indexed token, uint256 amount);
+    
+    event GasFundingTransfer(
+        address indexed token,
+        uint256 amount,
+        address indexed gasFundingWallet
+    );
+    
+    event GasFundingConfigUpdated(
+        address indexed newGasFundingWallet,
+        uint256 newPercentage
+    );
     
     modifier onlyAuthorized() {
         require(authorizedCallers[msg.sender] || msg.sender == owner(), "Not authorized");
@@ -238,6 +255,34 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     
     function setPriceFeed(address token, address feed) external onlyOwner {
         priceFeeds[token] = feed;
+    }
+    
+    // Gas funding configuration functions
+    function setGasFundingWallet(address _gasFundingWallet) external onlyOwner {
+        require(_gasFundingWallet != address(0), "Invalid gas funding wallet");
+        gasFundingWallet = _gasFundingWallet;
+        emit GasFundingConfigUpdated(_gasFundingWallet, gasFundingPercentage);
+    }
+    
+    function setGasFundingPercentage(uint256 _percentage) external onlyOwner {
+        require(_percentage <= MAX_GAS_FUNDING_PERCENTAGE, "Percentage too high");
+        gasFundingPercentage = _percentage;
+        emit GasFundingConfigUpdated(gasFundingWallet, _percentage);
+    }
+    
+    function disableGasFunding() external onlyOwner {
+        gasFundingWallet = address(0);
+        gasFundingPercentage = 0;
+        emit GasFundingConfigUpdated(address(0), 0);
+    }
+    
+    // Get gas funding statistics
+    function getGasFundingStats() external view returns (
+        address wallet,
+        uint256 percentage,
+        uint256 totalTransferred
+    ) {
+        return (gasFundingWallet, gasFundingPercentage, totalGasFundingTransferred);
     }
     
     // GAS OPTIMIZATION: Assembly for critical math operations
@@ -365,6 +410,9 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
         require(profit >= expectedProfit * 95 / 100, "Profit deviation too high");
 
         IERC20(asset).approve(address(vault), totalOwed);
+        
+        // Handle gas funding distribution
+        _handleGasFundingDistribution(asset, profit);
         
         if (isTriangular) {
             emit TriangularArbitrageExecuted(path[0], path[1], path[2], amount, profit);
@@ -596,6 +644,9 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
         
         IERC20(asset).approve(address(aavePool), totalOwed);
         
+        // Handle gas funding distribution
+        _handleGasFundingDistribution(asset, profit);
+        
         if (isTriangular) {
             emit TriangularArbitrageExecuted(path[0], path[1], path[2], amount, profit);
         } else {
@@ -608,6 +659,23 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     function _calculateMinProfitWithFee(uint256 amount, uint256 premium) internal view returns (uint256) {
         uint256 baseMinProfit = (amount * minProfitBps) / 10000;
         return baseMinProfit + premium;
+    }
+
+    // Handle gas funding distribution after profitable trades
+    function _handleGasFundingDistribution(address asset, uint256 profit) internal {
+        if (gasFundingWallet != address(0) && gasFundingPercentage > 0 && profit > 0) {
+            uint256 gasFunding = (profit * gasFundingPercentage) / 10000;
+            
+            if (gasFunding > 0) {
+                // Ensure we have enough balance for the transfer
+                uint256 contractBalance = IERC20(asset).balanceOf(address(this));
+                if (contractBalance >= gasFunding) {
+                    IERC20(asset).transfer(gasFundingWallet, gasFunding);
+                    totalGasFundingTransferred += gasFunding;
+                    emit GasFundingTransfer(asset, gasFunding, gasFundingWallet);
+                }
+            }
+        }
     }
 
     function withdraw(address token) external onlyOwner {
