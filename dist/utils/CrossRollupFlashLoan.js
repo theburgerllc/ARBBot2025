@@ -230,7 +230,7 @@ class CrossRollupFlashLoan {
             console.error('Error executing cross-rollup flash loan:', error);
             return {
                 success: false,
-                error: error.message
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }
@@ -297,7 +297,7 @@ class CrossRollupFlashLoan {
         }
         catch (error) {
             console.error('Error waiting for transaction:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
         }
     }
     getChainName(chainId) {

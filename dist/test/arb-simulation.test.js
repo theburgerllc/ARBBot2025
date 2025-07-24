@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const chai_1 = require("chai");
+require("@nomicfoundation/hardhat-chai-matchers");
 const hardhat_1 = require("hardhat");
 describe("🧪 Arbitrage Simulation Tests", function () {
     let flashArbBot;
@@ -104,9 +105,9 @@ describe("🧪 Arbitrage Simulation Tests", function () {
             }
             catch (error) {
                 console.log("❌ Arbitrage failed (expected if no profitable opportunity)");
-                console.log("Error:", error.message);
+                console.log("Error:", error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error));
                 // This is acceptable - not all market conditions are profitable
-                (0, chai_1.expect)(error.message).to.include("Insufficient profit" || "Arbitrage not profitable");
+                (0, chai_1.expect)(error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error)).to.include("Insufficient profit" || "Arbitrage not profitable");
             }
         });
         it("Should execute profitable triangular arbitrage", async function () {
@@ -148,9 +149,9 @@ describe("🧪 Arbitrage Simulation Tests", function () {
             }
             catch (error) {
                 console.log("❌ Triangular arbitrage failed (expected if no profitable opportunity)");
-                console.log("Error:", error.message);
+                console.log("Error:", error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error));
                 // This is acceptable - triangular arbitrage requires specific market conditions
-                (0, chai_1.expect)(error.message).to.include("Insufficient profit" || "Arbitrage not profitable");
+                (0, chai_1.expect)(error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error)).to.include("Insufficient profit" || "Arbitrage not profitable");
             }
         });
         it("Should test hybrid provider scenarios", async function () {
@@ -174,7 +175,7 @@ describe("🧪 Arbitrage Simulation Tests", function () {
             }
             catch (error) {
                 console.log("❌ Hybrid arbitrage failed (expected if no profitable opportunity)");
-                console.log("Error:", error.message);
+                console.log("Error:", error instanceof Error ? error.message : String(error));
             }
         });
         it("Should revert when arbitrage is unprofitable", async function () {
@@ -281,7 +282,7 @@ describe("🧪 Arbitrage Simulation Tests", function () {
                     console.log(`✅ ${scenario.description}: Gas estimate ${gasEstimate.toString()}`);
                 }
                 catch (error) {
-                    console.log(`❌ ${scenario.description}: Not profitable - ${error.message}`);
+                    console.log(`❌ ${scenario.description}: Not profitable - ${error instanceof Error ? error.message : String(error)}`);
                 }
             }
             console.log("✅ Market condition tests completed");

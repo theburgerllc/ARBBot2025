@@ -207,7 +207,7 @@ class FlashbotsParallelSimulator {
                 coinbaseDiff: '0',
                 blockNumber: 0,
                 transactions: [],
-                error: error.message
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }

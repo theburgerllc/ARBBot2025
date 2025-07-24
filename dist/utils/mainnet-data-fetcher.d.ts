@@ -45,8 +45,10 @@ export declare class MainnetDataFetcher {
     private priceCache;
     private liquidityCache;
     private readonly ROUTER_ABI;
+    private readonly QUOTER_ABI;
     private readonly ERC20_ABI;
     constructor();
+    private validateAndChecksumAddress;
     get arbProvider(): JsonRpcProvider;
     get optProvider(): JsonRpcProvider;
     fetchCurrentMarketData(chainId: number): Promise<MainnetMarketData>;
@@ -56,6 +58,8 @@ export declare class MainnetDataFetcher {
     private fetchRealTokenPrices;
     private getUniswapV2Price;
     private getSushiswapPrice;
+    private checkSushiswapPairExists;
+    private getTokenSymbol;
     private getBalancerPrice;
     private fetchLiquidityDepths;
     private fetchDEXPrices;

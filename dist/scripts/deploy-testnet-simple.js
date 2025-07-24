@@ -102,10 +102,10 @@ class SimpleTestnetDeployer {
         }
         // Test RPC connectivity
         try {
-            const provider = new ethers_1.ethers.providers.JsonRpcProvider(config.rpcUrl);
+            const provider = new ethers_1.JsonRpcProvider(config.rpcUrl);
             const blockNumber = await provider.getBlockNumber();
             const network = await provider.getNetwork();
-            if (network.chainId !== config.chainId) {
+            if (network.chainId !== BigInt(config.chainId)) {
                 throw new Error(`Chain ID mismatch: expected ${config.chainId}, got ${network.chainId}`);
             }
             console.log(chalk_1.default.green(`  ✅ RPC connected: Block ${blockNumber}, Chain ID ${network.chainId}`));
@@ -117,16 +117,16 @@ class SimpleTestnetDeployer {
     }
     async checkBalance(networkName) {
         const config = this.configs.get(networkName);
-        const provider = new ethers_1.ethers.providers.JsonRpcProvider(config.rpcUrl);
-        const wallet = new ethers_1.ethers.Wallet(config.privateKey, provider);
+        const provider = new ethers_1.JsonRpcProvider(config.rpcUrl);
+        const wallet = new ethers_1.Wallet(config.privateKey, provider);
         console.log(chalk_1.default.blue(`💰 Checking balance for deployment on ${networkName}...`));
         const balance = await provider.getBalance(wallet.address);
-        const balanceEth = ethers_1.ethers.utils.formatEther(balance);
-        const requiredBalanceWei = ethers_1.ethers.utils.parseEther(config.requiredBalance);
+        const balanceEth = (0, ethers_1.formatEther)(balance);
+        const requiredBalanceWei = (0, ethers_1.parseEther)(config.requiredBalance);
         console.log(chalk_1.default.white(`  Wallet address: ${wallet.address}`));
         console.log(chalk_1.default.white(`  Current balance: ${balanceEth} ETH`));
         console.log(chalk_1.default.white(`  Required balance: ${config.requiredBalance} ETH`));
-        if (balance.lt(requiredBalanceWei)) {
+        if (balance < requiredBalanceWei) {
             throw new Error(`Insufficient balance. Need ${config.requiredBalance} ETH, have ${balanceEth} ETH. Please fund the wallet first.`);
         }
         console.log(chalk_1.default.green(`  ✅ Sufficient balance available for deployment`));
@@ -155,11 +155,11 @@ class SimpleTestnetDeployer {
         const config = this.configs.get(networkName);
         console.log(chalk_1.default.blue(`🚀 Deploying FlashArbBotBalancer to ${networkName}...`));
         // Setup provider and wallet
-        const provider = new ethers_1.ethers.providers.JsonRpcProvider(config.rpcUrl);
-        const wallet = new ethers_1.ethers.Wallet(config.privateKey, provider);
+        const provider = new ethers_1.JsonRpcProvider(config.rpcUrl);
+        const wallet = new ethers_1.Wallet(config.privateKey, provider);
         const balance = await provider.getBalance(wallet.address);
         console.log(chalk_1.default.white(`  Deployer address: ${wallet.address}`));
-        console.log(chalk_1.default.white(`  Deployer balance: ${ethers_1.ethers.utils.formatEther(balance)} ETH`));
+        console.log(chalk_1.default.white(`  Deployer balance: ${(0, ethers_1.formatEther)(balance)} ETH`));
         console.log(chalk_1.default.white(`  Network: ${networkName} (Chain ID: ${config.chainId})`));
         // Get contract artifacts
         const { bytecode, abi } = await this.getContractArtifacts();
@@ -167,18 +167,19 @@ class SimpleTestnetDeployer {
             throw new Error('Invalid bytecode found in artifacts');
         }
         // Create contract factory
-        const contractFactory = new ethers_1.ethers.ContractFactory(abi, bytecode, wallet);
+        const contractFactory = new ethers_1.ContractFactory(abi, bytecode, wallet);
         // Estimate gas for deployment
-        const deploymentTx = contractFactory.getDeployTransaction(config.uniV2Router, config.sushiRouter, config.balancerVault);
+        const deploymentTx = await contractFactory.getDeployTransaction(config.uniV2Router, config.sushiRouter, config.balancerVault);
         const gasEstimate = await provider.estimateGas(deploymentTx);
-        const gasPrice = await provider.getGasPrice();
+        const feeData = await provider.getFeeData();
+        const gasPrice = feeData.gasPrice || BigInt(20000000000); // 20 gwei fallback
         console.log(chalk_1.default.gray(`  Estimated gas: ${gasEstimate.toString()}`));
-        console.log(chalk_1.default.gray(`  Gas price: ${ethers_1.ethers.utils.formatUnits(gasPrice, 'gwei')} gwei`));
+        console.log(chalk_1.default.gray(`  Gas price: ${(0, ethers_1.formatUnits)(gasPrice, 'gwei')} gwei`));
         // Deploy contract
         console.log(chalk_1.default.yellow(`  ⏳ Deploying contract...`));
         const deploymentStart = Date.now();
         const contract = await contractFactory.deploy(config.uniV2Router, config.sushiRouter, config.balancerVault, {
-            gasLimit: gasEstimate.mul(120).div(100), // Add 20% buffer
+            gasLimit: gasEstimate * BigInt(120) / BigInt(100), // Add 20% buffer
             gasPrice: gasPrice
         });
         console.log(chalk_1.default.yellow(`  ⏳ Waiting for deployment confirmation...`));
@@ -191,7 +192,7 @@ class SimpleTestnetDeployer {
         const receipt = await deployTx.wait();
         console.log(chalk_1.default.white(`  🧾 Transaction Hash: ${receipt.transactionHash}`));
         console.log(chalk_1.default.white(`  ⛽ Gas Used: ${receipt.gasUsed.toString()}`));
-        console.log(chalk_1.default.white(`  💰 Gas Price: ${ethers_1.ethers.utils.formatUnits(receipt.effectiveGasPrice || gasPrice, 'gwei')} gwei`));
+        console.log(chalk_1.default.white(`  💰 Gas Price: ${(0, ethers_1.formatUnits)(receipt.effectiveGasPrice || gasPrice, 'gwei')} gwei`));
         console.log(chalk_1.default.white(`  🏗️ Block Number: ${receipt.blockNumber}`));
         // Verify deployment
         const code = await provider.getCode(contract.address);
@@ -211,7 +212,7 @@ class SimpleTestnetDeployer {
             contractAddress: contract.address,
             deploymentBlock: receipt.blockNumber,
             gasUsed: receipt.gasUsed.toString(),
-            gasPrice: ethers_1.ethers.utils.formatUnits(receipt.effectiveGasPrice || gasPrice, 'gwei'),
+            gasPrice: (0, ethers_1.formatUnits)(receipt.effectiveGasPrice || gasPrice, 'gwei'),
             transactionHash: receipt.transactionHash
         };
     }
@@ -228,7 +229,7 @@ class SimpleTestnetDeployer {
             gasPrice: result.gasPrice,
             explorerUrl: `${config.explorerUrl}/address/${result.contractAddress}`,
             rpcUrl: config.rpcUrl,
-            deployerAddress: new ethers_1.ethers.Wallet(config.privateKey).address
+            deployerAddress: new ethers_1.Wallet(config.privateKey).address
         };
         const reportPath = path.join(process.cwd(), `deployment-${networkName}-${Date.now()}.json`);
         fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));

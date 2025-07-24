@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const chai_1 = require("chai");
+require("@nomicfoundation/hardhat-chai-matchers");
 const hardhat_1 = require("hardhat");
 describe("Aave V3 Flash Loan Integration - Simple", function () {
     let flashArbBot;

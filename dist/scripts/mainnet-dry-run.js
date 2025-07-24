@@ -533,8 +533,8 @@ class DryRunOrchestrator {
                     [10, this.dataFetcher['optProvider']]
                 ]);
                 this.dynamicSlippage = new dynamic_slippage_manager_1.DynamicSlippageManager(providers);
-                this.adaptiveProfit = new adaptive_profit_manager_1.AdaptiveProfitManager();
-                this.riskManager = new advanced_risk_manager_1.AdvancedRiskManager();
+                this.adaptiveProfit = new adaptive_profit_manager_1.AdaptiveProfitManager(providers);
+                this.riskManager = new advanced_risk_manager_1.AdvancedRiskManager((0, ethers_1.parseEther)("100")); // 100 ETH initial capital
                 this.oracleValidator = new oracle_price_validator_1.OraclePriceValidator(providers);
                 console.log(chalk_1.default.green('✅ Phase 3 optimization modules initialized'));
             }

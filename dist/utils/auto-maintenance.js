@@ -108,7 +108,7 @@ class AutoMaintenanceManager {
         }
         catch (error) {
             this.logger.error('❌ Daily maintenance failed:', error);
-            report.errors.push(error.message);
+            report.errors.push(error instanceof Error ? error.message : String(error));
         }
     }
     async performWeeklyOptimization() {
@@ -281,7 +281,7 @@ class AutoMaintenanceManager {
                     }
                 }
                 catch (error) {
-                    this.logger.warn(`Could not validate contract ${contract.name}:`, error.message);
+                    this.logger.warn(`Could not validate contract ${contract.name}:`, error instanceof Error ? error.message : String(error));
                 }
             }
         }
@@ -369,7 +369,7 @@ class AutoMaintenanceManager {
                 this.logger.info(`RPC Chain ${chainId}: ${latency}ms latency`);
             }
             catch (error) {
-                this.logger.warn(`RPC Chain ${chainId}: Failed - ${error.message}`);
+                this.logger.warn(`RPC Chain ${chainId}: Failed - ${error instanceof Error ? error.message : String(error)}`);
             }
         }
         this.logger.info('✅ RPC endpoint optimization completed');

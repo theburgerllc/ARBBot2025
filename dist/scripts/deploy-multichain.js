@@ -35,8 +35,9 @@ async function deployToNetwork(networkName, addresses) {
     };
 }
 async function main() {
-    const networkName = (await hardhat_1.default.ethers.provider.getNetwork()).name;
-    const chainId = (await hardhat_1.default.ethers.provider.getNetwork()).chainId;
+    const network = await hardhat_1.default.ethers.provider.getNetwork();
+    const networkName = network.name;
+    const chainId = network.chainId;
     console.log(chalk_1.default.yellow(`🔗 Deploying to network: ${networkName} (Chain ID: ${chainId})`));
     let addresses;
     let deploymentInfo;

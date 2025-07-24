@@ -56,6 +56,7 @@ declare class EnhancedMEVBot {
     private adaptiveProfitManager;
     private advancedRiskManager;
     private oraclePriceValidator;
+    private optimizationCoordinator;
     private arbBotContract;
     private optBotContract;
     private arbBalancerVault;

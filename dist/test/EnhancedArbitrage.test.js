@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const chai_1 = require("chai");
 const hardhat_1 = require("hardhat");
+require("@nomicfoundation/hardhat-chai-matchers");
 describe("Enhanced FlashArbBotBalancer Tests", function () {
     let bot;
     let owner;

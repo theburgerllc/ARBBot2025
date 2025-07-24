@@ -28,11 +28,12 @@ async function main() {
         throw new Error(`Network ${network} not supported. Use 'arbitrum' or 'optimism'`);
     }
     const config = networkConfigs[network];
-    const [deployer] = await ethers.getSigners();
+    const [deployer] = await hre.ethers.getSigners();
     console.log(`📝 Deploying with account: ${deployer.address}`);
-    console.log(`💰 Account balance: ${ethers.formatEther(await deployer.provider.getBalance(deployer.address))} ETH`);
+    const balance = await deployer.provider.getBalance(deployer.address);
+    console.log(`💰 Account balance: ${hre.ethers.formatEther(balance)} ETH`);
     // Verify network
-    const networkData = await ethers.provider.getNetwork();
+    const networkData = await hre.ethers.provider.getNetwork();
     if (Number(networkData.chainId) !== config.chainId) {
         throw new Error(`Network mismatch! Expected chain ID ${config.chainId}, got ${networkData.chainId}`);
     }
@@ -55,7 +56,7 @@ async function main() {
         { name: "USDC", address: config.usdc }
     ];
     for (const contract of contracts) {
-        const code = await ethers.provider.getCode(contract.address);
+        const code = await hre.ethers.provider.getCode(contract.address);
         if (code === "0x") {
             throw new Error(`Contract ${contract.name} not found at ${contract.address}`);
         }
@@ -63,7 +64,7 @@ async function main() {
     }
     // Deploy the flash arbitrage bot
     console.log(`\n📦 Deploying FlashArbBotBalancer...`);
-    const Factory = await ethers.getContractFactory("FlashArbBotBalancer");
+    const Factory = await hre.ethers.getContractFactory("FlashArbBotBalancer");
     const bot = await Factory.deploy(config.balancerVault, config.sushiRouter, config.uniswapV2Router, config.uniswapV3Quoter);
     console.log(`⏳ Waiting for deployment confirmation...`);
     await bot.waitForDeployment();
@@ -91,12 +92,12 @@ async function main() {
         console.log(`   ✅ Min Profit BPS: ${minProfitBps} (${Number(minProfitBps) / 100}%)`);
         // Test simulation
         const path = [config.weth, config.usdc];
-        const amount = ethers.parseEther("1");
+        const amount = hre.ethers.parseEther("1");
         const profit = await bot.simulateArbitrage(config.weth, amount, path, true);
-        console.log(`   ✅ Simulation test: ${ethers.formatEther(profit)} ETH profit`);
+        console.log(`   ✅ Simulation test: ${hre.ethers.formatEther(profit)} ETH profit`);
     }
     catch (error) {
-        console.log(`   ⚠️  Basic functionality test failed: ${error.message}`);
+        console.log(`   ⚠️  Basic functionality test failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     // Save deployment info
     const deploymentInfo = {

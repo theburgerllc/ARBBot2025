@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TriangularArbManager = void 0;
 const ethers_1 = require("ethers");
+const dex_routers_1 = require("../utils/dex-routers");
 // OPTIMIZATION: Advanced triangular arbitrage with multi-path analysis
 class TriangularArbManager {
     provider;
@@ -48,7 +49,7 @@ class TriangularArbManager {
         const opportunities = [];
         try {
             // Get available DEX routers for this chain
-            const routers = this.dexManager.getRoutersForChain(chainId);
+            const routers = dex_routers_1.EnhancedDEXManager.getAllRouters(chainId);
             // Generate all possible triangular paths
             const pathCombinations = this.generateTriangularPaths(chainId, routers);
             // Analyze each path combination (limit to prevent timeout)

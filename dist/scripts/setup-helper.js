@@ -44,7 +44,7 @@ class SetupHelper {
         catch (error) {
             console.log(chalk_1.default.red(`❌ ${networkName} RPC Connection Failed:`));
             console.log(chalk_1.default.red(`   URL: ${rpcUrl}`));
-            console.log(chalk_1.default.red(`   Error: ${error.message}`));
+            console.log(chalk_1.default.red(`   Error: ${error instanceof Error ? error.message : String(error)}`));
             return false;
         }
     }
@@ -68,7 +68,7 @@ class SetupHelper {
         }
         catch (error) {
             console.log(chalk_1.default.red(`❌ Wallet Balance Check Failed:`));
-            console.log(chalk_1.default.red(`   Error: ${error.message}`));
+            console.log(chalk_1.default.red(`   Error: ${error instanceof Error ? error.message : String(error)}`));
         }
     }
     static validatePrivateKey(privateKey) {
@@ -88,7 +88,7 @@ class SetupHelper {
             return true;
         }
         catch (error) {
-            console.log(chalk_1.default.red(`❌ Invalid private key: ${error.message}`));
+            console.log(chalk_1.default.red(`❌ Invalid private key: ${error instanceof Error ? error.message : String(error)}`));
             return false;
         }
     }

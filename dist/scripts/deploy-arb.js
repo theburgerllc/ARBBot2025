@@ -69,8 +69,8 @@ async function deployContract(config) {
     console.log("Deploying FlashArbBotBalancer to Arbitrum...");
     console.log("Deployer address:", deployer.address);
     console.log("Network:", "arbitrum");
-    const balance = await deployer.provider.getBalance(deployer.address);
-    console.log("Deployer balance:", hardhat_1.default.ethers.formatEther(balance), "ETH");
+    const balance = await deployer.provider?.getBalance(deployer.address);
+    console.log("Deployer balance:", balance ? (0, ethers_1.formatEther)(balance) : "0", "ETH");
     const FlashArbBotBalancer = await hardhat_1.default.ethers.getContractFactory("FlashArbBotBalancer");
     const flashArbBot = await FlashArbBotBalancer.deploy(config.balancerVault, config.sushiRouter, config.uniV2Router, process.env.UNISWAP_V3_QUOTER_ADDRESS);
     await flashArbBot.waitForDeployment();

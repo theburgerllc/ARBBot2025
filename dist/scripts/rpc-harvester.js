@@ -113,7 +113,7 @@ class RPCHarvester {
                     responseTime: 9999
                 };
             }
-            const provider = new ethers_1.ethers.providers.JsonRpcProvider(endpoint.url);
+            const provider = new ethers_1.JsonRpcProvider(endpoint.url);
             // Set timeout for the request
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('Timeout')), 10000); // 10 second timeout

@@ -269,7 +269,7 @@ class ArbitrageWorker {
         }
         catch (error) {
             console.error(`Worker ${this.workerId} execution error:`, error);
-            return { success: false, error: error.message };
+            return { success: false, error: error instanceof Error ? error.message : String(error) };
         }
     }
     async validateOpportunity(opportunity) {
@@ -316,7 +316,7 @@ class ArbitrageWorker {
         catch (error) {
             return {
                 success: false,
-                error: error.message
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }

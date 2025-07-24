@@ -1,4 +1,5 @@
 import { Contract, Signer } from "ethers";
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 export declare const WHALE_ADDRESSES: {
     ARB: {
         WETH: string;
@@ -115,9 +116,9 @@ export declare function resetToBlock(blockNumber: number): Promise<void>;
  * Setup complete testing environment with contracts and tokens
  */
 export declare function setupTestEnvironment(scenario?: 'high_volume' | 'volatile' | 'stable' | 'arbitrage_opportunity'): Promise<{
-    deployer: any;
-    user1: any;
-    user2: any;
+    deployer: SignerWithAddress;
+    user1: SignerWithAddress;
+    user2: SignerWithAddress;
     tokens: {
         [symbol: string]: {
             token: Contract;
@@ -162,9 +163,9 @@ export declare function createPerformanceBenchmarks(): {
         simulationTimeout: number;
     };
     profitThresholds: {
-        minimum: any;
-        target: any;
-        optimal: any;
+        minimum: bigint;
+        target: bigint;
+        optimal: bigint;
     };
 };
 declare const _default: {

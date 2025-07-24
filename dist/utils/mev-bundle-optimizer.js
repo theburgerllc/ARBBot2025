@@ -46,9 +46,11 @@ class MEVBundleOptimizer {
     // OPTIMIZATION: Comprehensive bundle simulation before submission
     async simulateBundle(bundle, targetBlockNumber) {
         try {
+            // Sign bundle before simulation
+            const signedBundle = await this.flashbotsProvider.signBundle(bundle);
             // Simulate bundle execution
-            const simulation = await this.flashbotsProvider.simulate(bundle, targetBlockNumber);
-            if (!simulation.success) {
+            const simulation = await this.flashbotsProvider.simulate(signedBundle, targetBlockNumber);
+            if ('error' in simulation) {
                 return {
                     success: false,
                     gasUsed: 0n,
@@ -62,9 +64,9 @@ class MEVBundleOptimizer {
                     }
                 };
             }
-            // Analyze simulation results
-            const gasUsed = simulation.results.reduce((total, result) => total + BigInt(result.gasUsed || 0), 0n);
-            const profit = this.calculateSimulationProfit(simulation.results);
+            // Analyze simulation results - simulation is SimulationResponseSuccess here
+            const gasUsed = simulation.totalGasUsed ? BigInt(simulation.totalGasUsed) : 0n;
+            const profit = simulation.coinbaseDiff ? BigInt(simulation.coinbaseDiff) : 0n;
             // Check for MEV conflicts
             const competitorAnalysis = await this.analyzeCompetitorActivity(bundle, targetBlockNumber);
             return {
@@ -289,7 +291,7 @@ class MEVBundleOptimizer {
     }
     // Helper methods
     generateBundleKey(bundle) {
-        return bundle.map(tx => tx.transaction.to + tx.transaction.data?.slice(0, 10)).join('|');
+        return bundle.map(tx => (tx.transaction.to || '0x0') + (tx.transaction.data?.slice(0, 10) || '')).join('|');
     }
     generateBundleSignature(bundle) {
         // Create a signature for bundle similarity comparison

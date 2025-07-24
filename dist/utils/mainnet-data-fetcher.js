@@ -17,6 +17,10 @@ class MainnetDataFetcher {
         "function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)",
         "function getAmountsIn(uint amountOut, address[] calldata path) external view returns (uint[] memory amounts)"
     ];
+    // Uniswap V3 Quoter ABI for price quotes
+    QUOTER_ABI = [
+        "function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external view returns (uint256 amountOut)"
+    ];
     ERC20_ABI = [
         "function balanceOf(address owner) view returns (uint256)",
         "function totalSupply() view returns (uint256)",
@@ -26,6 +30,16 @@ class MainnetDataFetcher {
     constructor() {
         this._arbProvider = new ethers_1.JsonRpcProvider(process.env.ARB_RPC);
         this._optProvider = new ethers_1.JsonRpcProvider(process.env.OPT_RPC);
+    }
+    // Helper function to validate and checksum addresses
+    validateAndChecksumAddress(address) {
+        try {
+            return (0, ethers_1.getAddress)(address.toLowerCase());
+        }
+        catch (error) {
+            console.warn(`Invalid address format: ${address}`);
+            return address; // Return original if validation fails
+        }
     }
     // Getter methods for provider access
     get arbProvider() { return this._arbProvider; }
@@ -173,18 +187,26 @@ class MainnetDataFetcher {
                 this.getBalancerPrice(pair.tokenA, pair.tokenB, marketData.chainId, pair.decimalsA)
             ];
             const [uniswapPrice, sushiPrice, balancerPrice] = await Promise.allSettled(pricePromises);
-            // Extract successful prices
-            const uniPrice = uniswapPrice.status === 'fulfilled' ? uniswapPrice.value : null;
-            const sushiPriceVal = sushiPrice.status === 'fulfilled' ? sushiPrice.value : null;
-            const balancerPriceVal = balancerPrice.status === 'fulfilled' ? balancerPrice.value : null;
-            if (!uniPrice || !sushiPriceVal)
+            // Extract successful price results
+            const uniswapPriceResult = uniswapPrice.status === 'fulfilled' ? uniswapPrice.value : null;
+            const sushiPriceResult = sushiPrice.status === 'fulfilled' ? sushiPrice.value : null;
+            const balancerPriceResult = balancerPrice.status === 'fulfilled' ? balancerPrice.value : null;
+            // Count available price sources
+            const availablePrices = [uniswapPriceResult, sushiPriceResult, balancerPriceResult].filter(p => p !== null);
+            if (availablePrices.length < 2) {
+                console.log(`   ℹ️  Insufficient price sources for ${pair.symbolA}/${pair.symbolB} (only ${availablePrices.length} available)`);
                 return null;
-            // Find the best arbitrage direction
-            const prices = [
-                { dex: 'uniswap', price: uniPrice },
-                { dex: 'sushiswap', price: sushiPriceVal },
-                ...(balancerPriceVal ? [{ dex: 'balancer', price: balancerPriceVal }] : [])
-            ].filter(p => p.price > 0n);
+            }
+            // Build prices array with available data
+            const prices = [];
+            if (uniswapPriceResult)
+                prices.push({ dex: 'uniswap', price: uniswapPriceResult });
+            if (sushiPriceResult)
+                prices.push({ dex: 'sushi', price: sushiPriceResult });
+            if (balancerPriceResult)
+                prices.push({ dex: 'balancer', price: balancerPriceResult });
+            // Log which DEXes have prices available
+            console.log(`   📊 Available prices: ${prices.map(p => `${p.dex}=${(0, ethers_1.formatEther)(p.price)}`).join(', ')}`);
             if (prices.length < 2)
                 return null;
             // Sort to find price spread
@@ -194,10 +216,10 @@ class MainnetDataFetcher {
             const lowDex = prices[0].dex;
             const highDex = prices[prices.length - 1].dex;
             const priceSpread = highPrice - lowPrice;
-            const spreadPercentage = Number(priceSpread * 10000n / lowPrice) / 100; // Percentage
-            // Only consider opportunities with meaningful spread
-            if (spreadPercentage < 0.05)
-                return null; // 0.05% minimum
+            const spreadPercentage = Number(priceSpread * 10000n / lowPrice) / 100;
+            // Only consider opportunities with >0.1% spread
+            if (spreadPercentage < 0.1)
+                return null;
             // Calculate optimal trade size based on liquidity and spread
             const baseTradeSize = pair.symbolA === 'WETH' ? (0, ethers_1.parseEther)("0.5") : (0, ethers_1.parseUnits)("1000", pair.decimalsA);
             const tradeSize = await this.calculateOptimalTradeSize(baseTradeSize, pair, marketData);
@@ -220,9 +242,9 @@ class MainnetDataFetcher {
                 tokenB: pair.tokenB,
                 tokenASymbol: pair.symbolA,
                 tokenBSymbol: pair.symbolB,
-                uniswapV2Price: uniPrice,
-                sushiswapPrice: sushiPriceVal,
-                balancerPrice: balancerPriceVal || 0n,
+                uniswapV2Price: uniswapPriceResult || 0n,
+                sushiswapPrice: sushiPriceResult || 0n,
+                balancerPrice: balancerPriceResult || 0n,
                 priceSpread,
                 spreadPercentage,
                 recommendedTradeSize: tradeSize,
@@ -295,37 +317,146 @@ class MainnetDataFetcher {
     async getUniswapV2Price(tokenA, tokenB, chainId, decimalsA) {
         try {
             const provider = chainId === 42161 ? this._arbProvider : this._optProvider;
-            const routerAddress = chainId === 42161 ? process.env.ARB_UNI_V2_ROUTER : process.env.OPT_UNI_V2_ROUTER;
-            const router = new ethers_1.Contract(routerAddress, this.ROUTER_ABI, provider);
+            const quoterAddress = chainId === 42161 ? process.env.ARB_UNI_V3_QUOTER : process.env.OPT_UNI_V3_QUOTER;
+            // Use Uniswap V3 Quoter for price quotes since V3 Router doesn't have getAmountsOut
+            const quoter = new ethers_1.Contract(quoterAddress, this.QUOTER_ABI, provider);
             const amountIn = (0, ethers_1.parseUnits)("1", decimalsA);
-            const path = [tokenA, tokenB];
-            const amounts = await router.getAmountsOut(amountIn, path);
-            return amounts[1]; // Output amount
+            // Fix: Validate and checksum addresses
+            const tokenInAddress = this.validateAndChecksumAddress(tokenA);
+            const tokenOutAddress = this.validateAndChecksumAddress(tokenB);
+            // Use 0.3% fee tier (3000) as default - most common tier
+            const fee = 3000;
+            const sqrtPriceLimitX96 = 0; // No price limit
+            // Add timeout protection
+            const amountOut = await Promise.race([
+                quoter.quoteExactInputSingle(tokenInAddress, tokenOutAddress, fee, amountIn, sqrtPriceLimitX96),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Uniswap call timeout')), 5000))
+            ]);
+            return amountOut;
         }
         catch (error) {
-            console.error('Error getting Uniswap V2 price:', error);
-            return null;
+            if (error.code === 'CALL_EXCEPTION') {
+                console.log(`   ℹ️  Uniswap: No pool for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)} on chain ${chainId}`);
+            }
+            else if (error.message?.includes('timeout')) {
+                console.log(`   ⚠️  Uniswap: Timeout fetching price for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)}`);
+            }
+            else {
+                console.log(`   ⚠️  Uniswap error for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)}:`, error.message);
+            }
+            // Try 0.05% fee tier as fallback
+            try {
+                const provider = chainId === 42161 ? this._arbProvider : this._optProvider;
+                const quoterAddress = chainId === 42161 ? process.env.ARB_UNI_V3_QUOTER : process.env.OPT_UNI_V3_QUOTER;
+                const quoter = new ethers_1.Contract(quoterAddress, this.QUOTER_ABI, provider);
+                const amountIn = (0, ethers_1.parseUnits)("1", decimalsA);
+                const tokenInAddress = this.validateAndChecksumAddress(tokenA);
+                const tokenOutAddress = this.validateAndChecksumAddress(tokenB);
+                const fee = 500; // 0.05% fee tier
+                const amountOut = await Promise.race([
+                    quoter.quoteExactInputSingle(tokenInAddress, tokenOutAddress, fee, amountIn, 0),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Uniswap fallback timeout')), 3000))
+                ]);
+                return amountOut;
+            }
+            catch (fallbackError) {
+                if (fallbackError.code === 'CALL_EXCEPTION') {
+                    console.log(`   ℹ️  Uniswap: No pools available for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)} on chain ${chainId}`);
+                }
+                else {
+                    console.log(`   ⚠️  Uniswap fallback error for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)}:`, fallbackError.message);
+                }
+                return null;
+            }
         }
     }
     async getSushiswapPrice(tokenA, tokenB, chainId, decimalsA) {
         try {
             const provider = chainId === 42161 ? this._arbProvider : this._optProvider;
             const routerAddress = chainId === 42161 ? process.env.ARB_SUSHI_ROUTER : process.env.OPT_SUSHI_ROUTER;
-            const router = new ethers_1.Contract(routerAddress, this.ROUTER_ABI, provider);
+            // First, check if the pair exists on SushiSwap
+            const pairExists = await this.checkSushiswapPairExists(tokenA, tokenB, chainId);
+            if (!pairExists) {
+                console.log(`   ℹ️  No SushiSwap pool for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)} on chain ${chainId}`);
+                return null;
+            }
+            const routerABI = [
+                "function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)"
+            ];
+            const router = new ethers_1.Contract(routerAddress, routerABI, provider);
             const amountIn = (0, ethers_1.parseUnits)("1", decimalsA);
-            const path = [tokenA, tokenB];
-            const amounts = await router.getAmountsOut(amountIn, path);
-            return amounts[1]; // Output amount
+            // Validate and checksum addresses
+            const path = [
+                this.validateAndChecksumAddress(tokenA),
+                this.validateAndChecksumAddress(tokenB)
+            ];
+            // Add timeout and retry logic
+            const amounts = await Promise.race([
+                router.getAmountsOut(amountIn, path),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('SushiSwap call timeout')), 5000))
+            ]);
+            if (amounts && amounts.length > 1 && amounts[1] > 0n) {
+                return amounts[1]; // Output amount
+            }
+            else {
+                console.log(`   ⚠️  SushiSwap returned zero liquidity for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)}`);
+                return null;
+            }
         }
         catch (error) {
-            console.error('Error getting Sushiswap price:', error);
+            // Enhanced error handling with specific error types
+            if (error.code === 'CALL_EXCEPTION') {
+                console.log(`   ℹ️  SushiSwap: No pool exists for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)} on chain ${chainId}`);
+            }
+            else if (error.message?.includes('timeout')) {
+                console.log(`   ⚠️  SushiSwap: Timeout fetching price for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)}`);
+            }
+            else {
+                console.log(`   ⚠️  SushiSwap: Error fetching price for ${this.getTokenSymbol(tokenA)}/${this.getTokenSymbol(tokenB)}:`, error.message);
+            }
             return null;
         }
+    }
+    // Add this new method to check if a SushiSwap pair exists
+    async checkSushiswapPairExists(tokenA, tokenB, chainId) {
+        try {
+            const provider = chainId === 42161 ? this._arbProvider : this._optProvider;
+            // SushiSwap Factory addresses
+            const factoryAddress = chainId === 42161
+                ? '0xc35DADB65012eC5796536bD9864eD8773aBc74C4' // Arbitrum SushiSwap Factory
+                : '0xc35DADB65012eC5796536bD9864eD8773aBc74C4'; // Optimism SushiSwap Factory
+            const factoryABI = [
+                "function getPair(address tokenA, address tokenB) external view returns (address pair)"
+            ];
+            const factory = new ethers_1.Contract(factoryAddress, factoryABI, provider);
+            const pairAddress = await factory.getPair(this.validateAndChecksumAddress(tokenA), this.validateAndChecksumAddress(tokenB));
+            // Check if pair exists (not zero address)
+            return pairAddress !== '0x0000000000000000000000000000000000000000';
+        }
+        catch (error) {
+            // If we can't check the factory, assume pair doesn't exist
+            return false;
+        }
+    }
+    // Add helper method for token symbols (for better logging)
+    getTokenSymbol(address) {
+        const symbolMap = {
+            [process.env.ARB_WETH]: 'WETH',
+            [process.env.ARB_USDC]: 'USDC',
+            [process.env.ARB_USDT]: 'USDT',
+            [process.env.OPT_WETH]: 'WETH',
+            [process.env.OPT_USDC]: 'USDC',
+            [process.env.OPT_USDT]: 'USDT'
+        };
+        return symbolMap[address] || address.slice(0, 6) + '...';
     }
     async getBalancerPrice(tokenA, tokenB, chainId, decimalsA) {
         try {
             // Simplified Balancer price estimation
             // In a real implementation, you'd query Balancer's SOR (Smart Order Router)
+            // Fix: Validate and checksum addresses for future compatibility
+            const validatedTokenA = this.validateAndChecksumAddress(tokenA);
+            const validatedTokenB = this.validateAndChecksumAddress(tokenB);
             const basePrice = (0, ethers_1.parseUnits)("1000", 6); // Fallback USDC price
             return basePrice;
         }

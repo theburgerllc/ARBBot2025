@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const chai_1 = require("chai");
 const hardhat_1 = require("hardhat");
+require("@nomicfoundation/hardhat-chai-matchers");
 describe("FlashArbBotBalancer Integration Tests", function () {
     let bot;
     let owner;
@@ -23,7 +24,8 @@ describe("FlashArbBotBalancer Integration Tests", function () {
     const USDC_WHALE = "0x62383739D68Dd0F844103Db8dFb05a7EdED5BBE6";
     before(async function () {
         // This test requires a forked network
-        if (hardhat_1.ethers.provider.network && hardhat_1.ethers.provider.network.name !== "hardhat") {
+        const network = await hardhat_1.ethers.provider.getNetwork();
+        if (network && network.name !== "hardhat") {
             this.skip();
         }
         [owner, addr1] = await hardhat_1.ethers.getSigners();
