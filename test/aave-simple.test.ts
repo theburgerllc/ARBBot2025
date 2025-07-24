@@ -1,6 +1,7 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import "@nomicfoundation/hardhat-chai-matchers";
+import hre, { ethers } from "hardhat";
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { Contract } from "ethers";
 
 describe("Aave V3 Flash Loan Integration - Simple", function () {

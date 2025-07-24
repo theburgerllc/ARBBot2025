@@ -1,7 +1,8 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import "@nomicfoundation/hardhat-chai-matchers";
+import hre, { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("🧪 Arbitrage Simulation Tests", function () {
   let flashArbBot: Contract;
@@ -150,10 +151,10 @@ describe("🧪 Arbitrage Simulation Tests", function () {
         
       } catch (error) {
         console.log("❌ Arbitrage failed (expected if no profitable opportunity)");
-        console.log("Error:", error.message);
+        console.log("Error:", error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error));
         
         // This is acceptable - not all market conditions are profitable
-        expect(error.message).to.include("Insufficient profit" || "Arbitrage not profitable");
+        expect(error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error)).to.include("Insufficient profit" || "Arbitrage not profitable");
       }
     });
 
@@ -214,10 +215,10 @@ describe("🧪 Arbitrage Simulation Tests", function () {
         
       } catch (error) {
         console.log("❌ Triangular arbitrage failed (expected if no profitable opportunity)");
-        console.log("Error:", error.message);
+        console.log("Error:", error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error));
         
         // This is acceptable - triangular arbitrage requires specific market conditions
-        expect(error.message).to.include("Insufficient profit" || "Arbitrage not profitable");
+        expect(error instanceof Error ? error instanceof Error ? error.message : String(error) : String(error)).to.include("Insufficient profit" || "Arbitrage not profitable");
       }
     });
 
@@ -259,7 +260,7 @@ describe("🧪 Arbitrage Simulation Tests", function () {
         
       } catch (error) {
         console.log("❌ Hybrid arbitrage failed (expected if no profitable opportunity)");
-        console.log("Error:", error.message);
+        console.log("Error:", error instanceof Error ? error.message : String(error));
       }
     });
 
@@ -431,7 +432,7 @@ describe("🧪 Arbitrage Simulation Tests", function () {
           console.log(`✅ ${scenario.description}: Gas estimate ${gasEstimate.toString()}`);
           
         } catch (error) {
-          console.log(`❌ ${scenario.description}: Not profitable - ${error.message}`);
+          console.log(`❌ ${scenario.description}: Not profitable - ${error instanceof Error ? error.message : String(error)}`);
         }
       }
       

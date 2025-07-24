@@ -1,6 +1,7 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import hre, { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
+import "@nomicfoundation/hardhat-chai-matchers";
 
 describe("FlashArbBotBalancer Integration Tests", function () {
   let bot: Contract;
@@ -26,7 +27,8 @@ describe("FlashArbBotBalancer Integration Tests", function () {
 
   before(async function () {
     // This test requires a forked network
-    if (ethers.provider.network && ethers.provider.network.name !== "hardhat") {
+    const network = await ethers.provider.getNetwork();
+    if (network && network.name !== "hardhat") {
       this.skip();
     }
     

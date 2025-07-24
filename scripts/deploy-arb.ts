@@ -1,6 +1,6 @@
 import hre from "hardhat";
 import { config } from "dotenv";
-import { isAddress } from "ethers";
+import { isAddress, formatEther } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -61,8 +61,8 @@ async function deployContract(config: DeploymentConfig) {
   console.log("Deployer address:", deployer.address);
   console.log("Network:", "arbitrum");
 
-  const balance = await deployer.provider.getBalance(deployer.address);
-  console.log("Deployer balance:", hre.ethers.formatEther(balance), "ETH");
+  const balance = await deployer.provider?.getBalance(deployer.address);
+  console.log("Deployer balance:", balance ? formatEther(balance) : "0", "ETH");
 
   const FlashArbBotBalancer = await hre.ethers.getContractFactory("FlashArbBotBalancer");
   const flashArbBot = await FlashArbBotBalancer.deploy(

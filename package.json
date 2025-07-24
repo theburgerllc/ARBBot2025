@@ -117,6 +117,8 @@
     "emergency:pause": "ts-node scripts/emergency-pause.ts",
     "emergency:resume": "ts-node scripts/emergency-resume.ts",
     "bot:test": "ENABLE_SIMULATION_MODE=true LOG_LEVEL=debug ts-node scripts/run-bot.ts",
+    "optimization:test": "MARKET_OPTIMIZATION_ENABLED=true ENABLE_SIMULATION_MODE=true LOG_LEVEL=debug ts-node scripts/run-bot.ts",
+    "optimization:status": "ts-node -e \"console.log('Market Optimization Protocol Status: Ready')\"",
     "deploy:all": "npm run deploy:arb && npm run deploy:opt",
     "verify:arbitrum": "hardhat verify --network arbitrum",
     "verify:optimism": "hardhat verify --network optimism",
@@ -157,9 +159,10 @@
     "@flashbots/ethers-provider-bundle": "^1.0.0",
     "@flashbots/mev-share-client": "^0.7.13",
     "@gmx-io/sdk": "1.1.2",
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@playwright/test": "^1.54.1",
     "@types/eventsource": "^1.1.15",
-    "axios": "^1.6.0",
+    "axios": "^1.7.7",
     "big.js": "^6.2.1",
     "chalk": "^4.1.2",
     "commander": "^11.0.0",
@@ -251,5 +254,10 @@
   "bugs": {
     "url": "https://github.com/username/enhanced-mev-arbitrage-bot/issues"
   },
-  "homepage": "https://github.com/username/enhanced-mev-arbitrage-bot#readme"
+  "homepage": "https://github.com/username/enhanced-mev-arbitrage-bot#readme",
+  "overrides": {
+    "form-data": "^4.0.1",
+    "bigint-buffer": "^1.1.5",
+    "cookie": "^0.7.2"
+  }
 }

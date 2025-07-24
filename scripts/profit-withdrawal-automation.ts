@@ -25,7 +25,7 @@ interface WithdrawalConfig {
 export class ProfitWithdrawalAutomation {
   private provider: ethers.JsonRpcProvider;
   private wallet: ethers.Wallet;
-  private contract: ethers.Contract;
+  private contract!: ethers.Contract; // Initialized in init()
   private config: WithdrawalConfig;
   private isRunning: boolean = false;
 

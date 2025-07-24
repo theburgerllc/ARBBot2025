@@ -3,7 +3,7 @@
 import { program } from 'commander';
 import { config } from 'dotenv';
 import { ethers } from 'ethers';
-import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+import { FlashbotsBundleProvider, SimulationResponse } from '@flashbots/ethers-provider-bundle';
 import { WorkerManager } from '../utils/WorkerManager';
 import { PerformanceReporter } from '../utils/PerformanceReporter';
 import chalk from 'chalk';
@@ -236,9 +236,9 @@ class FlashbotsParallelSimulator {
         targetBlock
       );
 
-      if (simulation.success) {
-        const totalGasUsed = simulation.results.reduce(
-          (sum, result) => sum + (result.gasUsed || 0), 0
+      if ((simulation as any).success) {
+        const totalGasUsed = (simulation as any).results.reduce(
+          (sum: number, result: any) => sum + (result.gasUsed || 0), 0
         );
         
         const gasPrice = transactions[0].gasPrice || ethers.parseUnits('20', 'gwei');
@@ -249,10 +249,10 @@ class FlashbotsParallelSimulator {
         const netProfit = estimatedProfit - Number(ethers.formatEther(gasCost));
         
         // Calculate coinbase difference
-        const coinbaseDiff = simulation.coinbaseDiff || '0';
+        const coinbaseDiff = (simulation as any).coinbaseDiff || '0';
         
         return {
-          bundleHash: simulation.bundleHash || `0x${Math.random().toString(16).slice(2)}`,
+          bundleHash: (simulation as any).bundleHash || `0x${Math.random().toString(16).slice(2)}`,
           success: true,
           profit: netProfit.toString(),
           gasUsed: ethers.formatEther(gasCost),
@@ -270,7 +270,7 @@ class FlashbotsParallelSimulator {
           coinbaseDiff: '0',
           blockNumber: targetBlock,
           transactions: signedTransactions,
-          error: simulation.error || 'Simulation failed'
+          error: (simulation as any).error || 'Simulation failed'
         };
       }
     } catch (error) {
@@ -282,7 +282,7 @@ class FlashbotsParallelSimulator {
         coinbaseDiff: '0',
         blockNumber: 0,
         transactions: [],
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }

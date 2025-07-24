@@ -1,6 +1,7 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import hre, { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
+import "@nomicfoundation/hardhat-chai-matchers";
 
 describe("FlashArbBotBalancer Unit Tests", function () {
   let bot: Contract;

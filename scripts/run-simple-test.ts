@@ -63,7 +63,13 @@ class SimpleArbitrageTest {
 
   private generateMockOpportunities(): any[] {
     const numOpportunities = Math.floor(Math.random() * 5); // 0-4 opportunities per second
-    const opportunities = [];
+    const opportunities: Array<{
+      profit: number;
+      gasUsed: number;
+      latency: number;
+      chain: string;
+      dex: string;
+    }> = [];
 
     for (let i = 0; i < numOpportunities; i++) {
       opportunities.push({

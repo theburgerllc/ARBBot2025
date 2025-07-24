@@ -1,7 +1,8 @@
 import { expect } from "chai";
-import { ethers, network } from "hardhat";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import hre, { ethers } from "hardhat";
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { Contract } from "ethers";
+import "@nomicfoundation/hardhat-chai-matchers";
 
 describe("Aave V3 Flash Loan Integration", function () {
   let flashArbBot: Contract;
@@ -26,7 +27,7 @@ describe("Aave V3 Flash Loan Integration", function () {
   beforeEach(async function () {
     [owner, user] = await ethers.getSigners();
 
-    await network.provider.request({
+    await hre.network.provider.request({
       method: "hardhat_impersonateAccount",
       params: [WHALE_ADDRESS],
     });

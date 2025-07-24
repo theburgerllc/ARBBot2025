@@ -30,7 +30,8 @@
     "./tasks/**/*",
     "./types/**/*",
     "./monitoring/**/*",
-    "./strategies/**/*"
+    "./strategies/**/*",
+    "./src/**/*"
   ],
   "exclude": [
     "node_modules",

@@ -11,7 +11,7 @@
  */
 
 import { chromium, Browser, Page } from 'playwright';
-import { ethers } from 'ethers';
+import { ethers, JsonRpcProvider } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
@@ -113,7 +113,7 @@ class RPCHarvester {
         };
       }
 
-      const provider = new ethers.providers.JsonRpcProvider(endpoint.url);
+      const provider = new JsonRpcProvider(endpoint.url);
       
       // Set timeout for the request
       const timeoutPromise = new Promise((_, reject) => {

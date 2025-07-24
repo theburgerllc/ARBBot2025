@@ -1,6 +1,7 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { Contract, Signer } from "ethers";
+import "@nomicfoundation/hardhat-chai-matchers";
+import hre, { ethers } from "hardhat";
+import { Contract, Signer, JsonRpcProvider } from "ethers";
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
 import { EnhancedMEVBot } from "../scripts/run-bot";
 import dotenv from "dotenv";
@@ -11,8 +12,8 @@ describe("Enhanced MEV Bot Tests", function () {
   let bot: EnhancedMEVBot;
   let owner: Signer;
   let flashbotsProvider: FlashbotsBundleProvider;
-  let arbitrumProvider: ethers.JsonRpcProvider;
-  let optimismProvider: ethers.JsonRpcProvider;
+  let arbitrumProvider: JsonRpcProvider;
+  let optimismProvider: JsonRpcProvider;
   let mockFlashbotsAuth: Signer;
   let mockExecutor: Signer;
   
@@ -51,8 +52,8 @@ describe("Enhanced MEV Bot Tests", function () {
     [owner, mockFlashbotsAuth, mockExecutor] = await ethers.getSigners();
     
     // Set up test environment variables
-    process.env.PRIVATE_KEY = await mockExecutor.getPrivateKey();
-    process.env.FLASHBOTS_AUTH_KEY = await mockFlashbotsAuth.getPrivateKey();
+    process.env.PRIVATE_KEY = "0x" + "a".repeat(64); // Mock private key for testing
+    process.env.FLASHBOTS_AUTH_KEY = "0x" + "b".repeat(64); // Mock private key for testing
     process.env.ARB_RPC = "https://arb1.arbitrum.io/rpc";
     process.env.OPT_RPC = "https://mainnet.optimism.io";
     process.env.ENABLE_CROSS_CHAIN_MONITORING = "true";
@@ -157,10 +158,7 @@ describe("Enhanced MEV Bot Tests", function () {
         gasPrice: ethers.parseUnits("1", "gwei")
       };
       
-      const bundleTransaction = {
-        signer: mockExecutor,
-        transaction: mockTx
-      };
+      const bundleTransaction = "0x" + "c".repeat(128); // Mock signed transaction
       
       // Test bundle simulation
       try {
@@ -195,15 +193,12 @@ describe("Enhanced MEV Bot Tests", function () {
         gasPrice: ethers.parseUnits("1", "gwei")
       };
       
-      const bundleTransaction = {
-        signer: mockExecutor,
-        transaction: mockTx
-      };
+      const bundleTransaction = "0x" + "d".repeat(128); // Mock signed transaction
       
       // Test bundle submission
       try {
         const bundleSubmission = await flashbotsProvider.sendBundle(
-          [bundleTransaction],
+          [bundleTransaction as any],
           await arbitrumProvider.getBlockNumber() + 1
         );
         

@@ -109,8 +109,8 @@ class SetupValidator {
       'SUSHI_ROUTER_OPT'
     ];
     
-    const missingVars = [];
-    const invalidVars = [];
+    const missingVars: string[] = [];
+    const invalidVars: Array<{ name: string; issue: string }> = [];
     
     for (const varName of requiredVars) {
       const value = process.env[varName];

@@ -24,7 +24,7 @@ interface GasFundingStats {
 export class GasFundingManager {
   private provider: ethers.JsonRpcProvider;
   private wallet: ethers.Wallet;
-  private contract: ethers.Contract;
+  private contract!: ethers.Contract; // Initialized in init()
   private config: GasFundingConfig;
   private isRunning: boolean = false;
 

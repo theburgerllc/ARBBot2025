@@ -96,7 +96,7 @@ export class TriangularArbManager {
         
         try {
             // Get available DEX routers for this chain
-            const routers = this.dexManager.getRoutersForChain(chainId);
+            const routers = EnhancedDEXManager.getAllRouters(chainId);
             
             // Generate all possible triangular paths
             const pathCombinations = this.generateTriangularPaths(chainId, routers);

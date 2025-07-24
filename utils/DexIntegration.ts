@@ -20,8 +20,8 @@ export interface QuoteResult {
 }
 
 export class DexIntegration {
-  private curveApi: CurveApi;
-  private gmxReader: GMXReader | null = null;
+  private curveApi: typeof CurveApi;
+  private gmxReader: typeof GMXReader | null = null;
   
   constructor(
     private readonly providers: Record<string, ethers.JsonRpcProvider>,

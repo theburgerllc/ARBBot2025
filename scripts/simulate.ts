@@ -107,7 +107,16 @@ class ArbitrageSimulator {
       ethers.parseEther("25")
     ];
     
-    const opportunities = [];
+    const opportunities: Array<{
+      tokenA: string;
+      tokenB: string;
+      path: string[];
+      amount: bigint;
+      profit: bigint;
+      profitPercentage: number;
+      sushiFirst: boolean;
+      direction: string;
+    }> = [];
     
     for (let i = 0; i < tokens.length; i++) {
       for (let j = i + 1; j < tokens.length; j++) {

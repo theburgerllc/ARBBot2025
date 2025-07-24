@@ -75,6 +75,18 @@ declare module "@flashbots/ethers-provider-bundle" {
     bundleHash: string;
     wait: () => Promise<any>;
   }
+  
+  export interface SimulationResponse {
+    success: boolean;
+    results: Array<{
+      gasUsed: number;
+      [key: string]: any;
+    }>;
+    coinbaseDiff: string;
+    bundleHash: string;
+    error?: string;
+    [key: string]: any;
+  }
 }
 
 declare module "@flashbots/mev-share-client" {
@@ -131,6 +143,7 @@ declare module "chai" {
 // Global namespace extensions
 declare global {
   var gc: (() => void) | undefined;
+  var navigator: { userAgent: string; [key: string]: any } | undefined;
   
   namespace NodeJS {
     interface ProcessEnv {

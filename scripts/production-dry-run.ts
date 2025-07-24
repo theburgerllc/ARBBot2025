@@ -68,7 +68,7 @@ class MockArbitrageBot {
 }
 
 class ProductionValidator {
-  private bot: MockArbitrageBot;
+  private bot!: MockArbitrageBot; // Initialized in constructor
   private metrics: OpportunityMetrics;
   private startTime: number;
   private maxDuration: number = 7200000; // 2 hours in ms
@@ -94,7 +94,7 @@ class ProductionValidator {
     
     // Initialize with mock providers for dry run
     const provider = new ethers.JsonRpcProvider("https://arb1.arbitrum.io/rpc");
-    const wallet = new ethers.Wallet("0x" + "0".repeat(64), provider); // Mock private key
+    const wallet = new ethers.Wallet("0x" + "1".repeat(64), provider); // Valid mock private key
     
     this.bot = new MockArbitrageBot(wallet, {
       simulationMode: true,

@@ -12,6 +12,7 @@
 
 import hre from "hardhat";
 import { config } from "dotenv";
+import { JsonRpcProvider, Wallet, parseEther, formatEther, isAddress, parseUnits, formatUnits } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
 import chalk from 'chalk';
@@ -132,7 +133,7 @@ class TestnetDeployer {
 
     // Test RPC connectivity
     try {
-      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const provider = new JsonRpcProvider(config.rpcUrl);
       const blockNumber = await provider.getBlockNumber();
       const network = await provider.getNetwork();
       
@@ -146,11 +147,11 @@ class TestnetDeployer {
     }
 
     // Validate contract addresses
-    if (!utils.isAddress(config.uniV2Router)) {
+    if (!isAddress(config.uniV2Router)) {
       console.log(chalk.yellow(`  ⚠️ Uniswap V2 router address may be invalid: ${config.uniV2Router}`));
     }
 
-    if (!utils.isAddress(config.balancerVault)) {
+    if (!isAddress(config.balancerVault)) {
       throw new Error(`Invalid Balancer Vault address: ${config.balancerVault}`);
     }
 
@@ -159,14 +160,14 @@ class TestnetDeployer {
 
   async checkAndEnsureBalance(networkName: string): Promise<void> {
     const config = this.testnetConfigs.get(networkName)!;
-    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    const wallet = new ethers.Wallet(config.privateKey, provider);
+    const provider = new JsonRpcProvider(config.rpcUrl);
+    const wallet = new Wallet(config.privateKey, provider);
     
     console.log(chalk.blue(`💰 Checking balance for deployment on ${networkName}...`));
     
     const balance = await provider.getBalance(wallet.address);
-    const balanceEth = ethers.utils.formatEther(balance);
-    const requiredBalanceWei = ethers.utils.parseEther(config.requiredBalance);
+    const balanceEth = formatEther(balance);
+    const requiredBalanceWei = parseEther(config.requiredBalance);
     
     console.log(chalk.white(`  Current balance: ${balanceEth} ETH`));
     console.log(chalk.white(`  Required balance: ${config.requiredBalance} ETH`));
@@ -186,7 +187,10 @@ class TestnetDeployer {
           rpcUrl: config.rpcUrl,
           explorerUrl: config.explorerUrl,
           faucetUrl: this.getFaucetUrl(networkName),
-          requiredBalance: config.requiredBalance
+          requiredBalance: config.requiredBalance,
+          priority: 1,
+          estimatedWaitTime: 5, // 5 minutes
+          amount: "0.1" // 0.1 ETH per request
         };
         
         const result = await automation.requestFaucetTokens(testnetConfig);
@@ -206,7 +210,7 @@ class TestnetDeployer {
             
             const newBalance = await provider.getBalance(wallet.address);
             if (newBalance >= requiredBalanceWei) {
-              console.log(chalk.green(`  ✅ Sufficient balance received: ${ethers.utils.formatEther(newBalance)} ETH`));
+              console.log(chalk.green(`  ✅ Sufficient balance received: ${formatEther(newBalance)} ETH`));
               return;
             }
             
@@ -243,20 +247,20 @@ class TestnetDeployer {
     console.log(chalk.blue(`🚀 Deploying FlashArbBotBalancer to ${networkName}...`));
     
     // Get deployer account
-    const [deployer] = await ethers.getSigners();
+    const [deployer] = await hre.ethers.getSigners();
     const balance = await deployer.provider.getBalance(deployer.address);
     
     console.log(chalk.white(`  Deployer address: ${deployer.address}`));
-    console.log(chalk.white(`  Deployer balance: ${ethers.utils.formatEther(balance)} ETH`));
+    console.log(chalk.white(`  Deployer balance: ${formatEther(balance)} ETH`));
     console.log(chalk.white(`  Network: ${networkName} (Chain ID: ${config.chainId})`));
 
     // Get contract factory
-    const FlashArbBotBalancer = await ethers.getContractFactory("FlashArbBotBalancer");
+    const FlashArbBotBalancer = await hre.ethers.getContractFactory("FlashArbBotBalancer");
     
     // Prepare deployment transaction with optimized gas settings
     const gasLimit = config.gasSettings.gasLimit;
-    const maxFeePerGas = ethers.utils.parseUnits(config.gasSettings.maxFeePerGas, 'gwei');
-    const maxPriorityFeePerGas = ethers.utils.parseUnits(config.gasSettings.maxPriorityFeePerGas, 'gwei');
+    const maxFeePerGas = parseUnits(config.gasSettings.maxFeePerGas, 'gwei');
+    const maxPriorityFeePerGas = parseUnits(config.gasSettings.maxPriorityFeePerGas, 'gwei');
 
     console.log(chalk.gray(`  Gas Limit: ${gasLimit.toLocaleString()}`));
     console.log(chalk.gray(`  Max Fee Per Gas: ${config.gasSettings.maxFeePerGas} gwei`));
@@ -299,7 +303,7 @@ class TestnetDeployer {
 
     console.log(chalk.white(`  🧾 Transaction Hash: ${receipt.hash}`));
     console.log(chalk.white(`  ⛽ Gas Used: ${receipt.gasUsed.toLocaleString()}`));
-    console.log(chalk.white(`  💰 Gas Price: ${ethers.utils.formatUnits(receipt.gasPrice || 0, 'gwei')} gwei`));
+    console.log(chalk.white(`  💰 Gas Price: ${formatUnits(receipt.gasPrice || 0, 'gwei')} gwei`));
     console.log(chalk.white(`  🏗️ Block Number: ${receipt.blockNumber}`));
 
     // Verify deployment
@@ -324,7 +328,7 @@ class TestnetDeployer {
       contractAddress,
       deploymentBlock: receipt.blockNumber,
       gasUsed: receipt.gasUsed.toString(),
-      gasPrice: ethers.utils.formatUnits(receipt.gasPrice || 0, 'gwei'),
+      gasPrice: formatUnits(receipt.gasPrice || 0, 'gwei'),
       transactionHash: receipt.hash,
       verified: true
     };
@@ -334,7 +338,7 @@ class TestnetDeployer {
     console.log(chalk.blue(`🔍 Running post-deployment validation for ${networkName}...`));
     
     const config = this.testnetConfigs.get(networkName)!;
-    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+    const provider = new JsonRpcProvider(config.rpcUrl);
     
     // Test 1: Contract code verification
     const code = await provider.getCode(result.contractAddress);
@@ -342,9 +346,9 @@ class TestnetDeployer {
     
     // Test 2: Contract storage verification  
     try {
-      const flashArbBot = await ethers.getContractAt("FlashArbBotBalancer", result.contractAddress);
+      const flashArbBot = await hre.ethers.getContractAt("FlashArbBotBalancer", result.contractAddress);
       const owner = await flashArbBot.owner();
-      const [deployer] = await ethers.getSigners();
+      const [deployer] = await hre.ethers.getSigners();
       
       if (owner.toLowerCase() === deployer.address.toLowerCase()) {
         console.log(chalk.green(`  ✅ Contract ownership correctly set`));
@@ -414,7 +418,7 @@ class TestnetDeployer {
       explorerUrl: `${config.explorerUrl}/address/${result.contractAddress}`,
       rpcUrl: config.rpcUrl,
       verified: result.verified,
-      deployerAddress: new ethers.Wallet(config.privateKey).address
+      deployerAddress: new Wallet(config.privateKey).address
     };
 
     const reportPath = path.join(process.cwd(), `deployment-${networkName}-${Date.now()}.json`);

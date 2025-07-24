@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, JsonRpcProvider, parseEther, formatEther, parseUnits } from "ethers";
 import { Symbiosis } from 'symbiosis-js-sdk';
 import * as dotenv from "dotenv";
 const chalk = require('chalk');
@@ -12,7 +12,7 @@ interface FundingConfig {
 }
 
 class MultiChainFunder {
-  private mainnetProvider: ethers.providers.JsonRpcProvider;
+  private mainnetProvider: JsonRpcProvider;
   private executorWallet: ethers.Wallet;
   private symbiosis: Symbiosis | null = null;
   
@@ -32,7 +32,7 @@ class MultiChainFunder {
   };
 
   constructor(config: FundingConfig) {
-    this.mainnetProvider = new ethers.providers.JsonRpcProvider(
+    this.mainnetProvider = new JsonRpcProvider(
       process.env.MAINNET_RPC || "https://eth.llamarpc.com"
     );
     this.executorWallet = new ethers.Wallet(
@@ -55,9 +55,9 @@ class MultiChainFunder {
 
     // Check mainnet balance
     const mainnetBalance = await this.mainnetProvider.getBalance(this.executorWallet.address);
-    console.log(chalk.cyan(`💰 Mainnet balance: ${ethers.utils.formatEther(mainnetBalance)} ETH`));
+    console.log(chalk.cyan(`💰 Mainnet balance: ${formatEther(mainnetBalance)} ETH`));
     
-    if (mainnetBalance.lt(ethers.utils.parseEther("0.1"))) {
+    if (mainnetBalance < parseEther("0.1")) {
       console.log(chalk.yellow('⚠️ WARNING: Low mainnet balance. Consider adding funds before proceeding.'));
     }
   }
@@ -89,12 +89,12 @@ class MultiChainFunder {
 
     try {
       // Check current balance on target chain
-      const targetProvider = new ethers.providers.JsonRpcProvider(chainConfig.rpcUrl);
+      const targetProvider = new JsonRpcProvider(chainConfig.rpcUrl);
       const currentBalance = await targetProvider.getBalance(this.executorWallet.address);
       
-      console.log(chalk.gray(`Current ${chainConfig.name} balance: ${ethers.utils.formatEther(currentBalance)} ETH`));
+      console.log(chalk.gray(`Current ${chainConfig.name} balance: ${formatEther(currentBalance)} ETH`));
       
-      if (currentBalance.gt(ethers.utils.parseEther("0.01"))) {
+      if (currentBalance > parseEther("0.01")) {
         console.log(chalk.green(`✅ ${chainConfig.name} already has sufficient balance, skipping...`));
         return;
       }
@@ -119,7 +119,7 @@ class MultiChainFunder {
         throw new Error('Symbiosis not initialized');
       }
 
-      const amountWei = ethers.utils.parseEther(amount);
+      const amountWei = parseEther(amount);
       
       // Create bridge transaction
       console.log(chalk.blue('📦 Preparing bridge transaction...'));
@@ -134,7 +134,7 @@ class MultiChainFunder {
         data: "0x" + "0".repeat(200), // Simulated calldata
         value: amountWei,
         gas: "300000",
-        gasPrice: ethers.utils.parseUnits("20", "gwei")
+        gasPrice: parseUnits("20", "gwei")
       };
 
       console.log(chalk.blue('📤 Executing bridge transaction...'));
@@ -161,7 +161,7 @@ class MultiChainFunder {
   private async waitForBridgeCompletion(
     chainName: string,
     txHash: string,
-    targetProvider: ethers.providers.JsonRpcProvider
+    targetProvider: JsonRpcProvider
   ): Promise<void> {
     const maxWaitTime = 30 * 60 * 1000; // 30 minutes
     const checkInterval = 60 * 1000; // 1 minute
@@ -174,8 +174,8 @@ class MultiChainFunder {
       
       const currentBalance = await targetProvider.getBalance(this.executorWallet.address);
       
-      if (currentBalance.gt(initialBalance)) {
-        console.log(chalk.green(`✅ Bridge completed! New ${chainName} balance: ${ethers.utils.formatEther(currentBalance)} ETH`));
+      if (currentBalance > initialBalance) {
+        console.log(chalk.green(`✅ Bridge completed! New ${chainName} balance: ${formatEther(currentBalance)} ETH`));
         return;
       }
       
@@ -195,15 +195,15 @@ class MultiChainFunder {
 
     // Check mainnet
     const mainnetBalance = await this.mainnetProvider.getBalance(this.executorWallet.address);
-    console.log(chalk.white(`│ Ethereum         │ ${ethers.utils.formatEther(mainnetBalance).padStart(15)} │`));
+    console.log(chalk.white(`│ Ethereum         │ ${formatEther(mainnetBalance).padStart(15)} │`));
 
     // Check each target chain
     for (const [chainName, config] of Object.entries(this.CHAIN_CONFIGS)) {
       try {
-        const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+        const provider = new JsonRpcProvider(config.rpcUrl);
         const balance = await provider.getBalance(this.executorWallet.address);
-        const color = balance.gt(ethers.utils.parseEther("0.001")) ? chalk.green : chalk.red;
-        console.log(color(`│ ${config.name.padEnd(16)} │ ${ethers.utils.formatEther(balance).padStart(15)} │`));
+        const color = balance > parseEther("0.001") ? chalk.green : chalk.red;
+        console.log(color(`│ ${config.name.padEnd(16)} │ ${formatEther(balance).padStart(15)} │`));
       } catch (error) {
         console.log(chalk.red(`│ ${config.name.padEnd(16)} │ ERROR           │`));
       }

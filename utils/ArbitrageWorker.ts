@@ -22,10 +22,10 @@ export interface ExecutionResult {
 export class ArbitrageWorker {
   private providers: Record<string, ethers.JsonRpcProvider> = {};
   private signers: Record<string, ethers.Wallet> = {};
-  private liquidityFiltering: LiquidityFiltering;
+  private liquidityFiltering!: LiquidityFiltering;
   private dexIntegrations: Record<number, DexIntegration> = {};
-  private symbiosisIntegration: SymbiosisIntegration;
-  private gasOptimizer: GasOptimizer;
+  private symbiosisIntegration!: SymbiosisIntegration;
+  private gasOptimizer!: GasOptimizer;
   private opportunitiesFound = 0;
   private executionsAttempted = 0;
   private executionsSuccessful = 0;
@@ -370,7 +370,7 @@ export class ArbitrageWorker {
       return result;
     } catch (error) {
       console.error(`Worker ${this.workerId} execution error:`, error);
-      return { success: false, error: error.message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -428,7 +428,7 @@ export class ArbitrageWorker {
     } catch (error) {
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }

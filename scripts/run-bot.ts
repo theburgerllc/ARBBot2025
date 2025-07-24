@@ -19,6 +19,7 @@ import { DynamicSlippageManager } from "../utils/dynamic-slippage-manager";
 import { AdaptiveProfitManager } from "../utils/adaptive-profit-manager";
 import { AdvancedRiskManager } from "../utils/advanced-risk-manager";
 import { OraclePriceValidator } from "../utils/oracle-price-validator";
+import { OptimizationCoordinator } from "../src/optimization/optimization-coordinator";
 
 import balancerVaultABI from "../abi/BalancerVault.json";
 import uniswapV2RouterABI from "../abi/UniswapV2Router.json";
@@ -121,6 +122,8 @@ interface GasSettings {
   maxFeePerGas: bigint;
   maxPriorityFeePerGas: bigint;
   baseFee: bigint;
+  optimalTip: bigint;
+  networkCongestion: number;
 }
 
 class EnhancedMEVBot {
@@ -146,6 +149,9 @@ class EnhancedMEVBot {
   private adaptiveProfitManager!: AdaptiveProfitManager;
   private advancedRiskManager!: AdvancedRiskManager;
   private oraclePriceValidator!: OraclePriceValidator;
+  
+  // MARKET OPTIMIZATION PROTOCOL
+  private optimizationCoordinator!: OptimizationCoordinator;
   
   // Contract instances
   private arbBotContract!: ethers.Contract;
@@ -437,8 +443,27 @@ class EnhancedMEVBot {
     const initialCapital = parseEther("10"); // 10 ETH starting capital
     this.advancedRiskManager = new AdvancedRiskManager(initialCapital);
     
+    // MARKET OPTIMIZATION PROTOCOL: Initialize coordination layer
+    this.optimizationCoordinator = new OptimizationCoordinator(
+      providers,
+      {
+        adaptiveProfitManager: this.adaptiveProfitManager,
+        gasOptimizer: this.gasOptimizer,
+        slippageManager: this.dynamicSlippageManager,
+        mevBundleOptimizer: this.mevBundleOptimizer,
+        riskManager: this.advancedRiskManager,
+        priceValidator: this.oraclePriceValidator
+      },
+      {
+        enabled: process.env.MARKET_OPTIMIZATION_ENABLED === 'true',
+        primaryChainId: 42161,
+        frequency: parseInt(process.env.OPTIMIZATION_FREQUENCY || '300000')
+      }
+    );
+    
     logger.info(chalk.green("🚀 All optimization modules initialized"));
     logger.info(chalk.blue("📊 Phase 3 advanced optimizations: Dynamic Slippage, Adaptive Profit, Risk Management, Oracle Validation"));
+    logger.info(chalk.magenta("🎯 Market Optimization Protocol integrated and ready"));
   }
   
   private async checkAaveLiquidity(asset: string, amount: bigint, chainId: number): Promise<{
@@ -592,11 +617,20 @@ class EnhancedMEVBot {
       const optBalance = this.crossChainEnabled ? 
         await this.optimismProvider.getBalance(this.optimismExecutor.address) : 0n;
       
+      // Initialize Market Optimization Protocol
+      try {
+        await this.optimizationCoordinator.initialize();
+        logger.info(chalk.magenta("🎯 Market Optimization Protocol initialized successfully"));
+      } catch (error) {
+        logger.warn(chalk.yellow("⚠️ Market Optimization Protocol initialization failed, continuing in fallback mode"), error);
+      }
+      
       logger.info(chalk.green("🚀 Enhanced MEV Bot initialized"), {
         arbitrumBalance: formatEther(arbBalance),
         optimismBalance: formatEther(optBalance),
         flashbotsEnabled: true,
-        mevShareEnabled: !!this.mevShareClient
+        mevShareEnabled: !!this.mevShareClient,
+        optimizationEnabled: this.optimizationCoordinator?.getOptimizationStatus().isRunning || false
       });
       
       // Check circuit breaker
@@ -692,7 +726,40 @@ class EnhancedMEVBot {
         return false;
       }
       
-      logger.info(chalk.cyan("🚀 Executing arbitrage opportunity (Phase 3 approved)"), {
+      // MARKET OPTIMIZATION PROTOCOL: Get optimized parameters and validate trade
+      let optimizationValidation;
+      try {
+        optimizationValidation = await this.optimizationCoordinator.validateTradeParameters(
+          opportunity.tokenA,
+          opportunity.tokenB,
+          BigInt(opportunity.amountIn),
+          BigInt(opportunity.expectedProfit),
+          opportunity.chainId
+        );
+        
+        if (!optimizationValidation.approved) {
+          logger.warn(chalk.red("❌ Trade rejected by Market Optimization Protocol"), {
+            warnings: optimizationValidation.warnings
+          });
+          return false;
+        }
+        
+        if (optimizationValidation.warnings.length > 0) {
+          logger.warn(chalk.yellow("⚠️ Market optimization warnings:"), optimizationValidation.warnings);
+        }
+        
+        logger.info(chalk.magenta("🎯 Market Optimization Protocol approved trade"), {
+          riskLevel: optimizationValidation.optimizedParameters.riskLevel,
+          slippage: `${optimizationValidation.optimizedParameters.slippageTolerance}bps`,
+          gasUrgency: optimizationValidation.optimizedParameters.gasSettings.urgency
+        });
+        
+      } catch (error) {
+        logger.warn(chalk.yellow("⚠️ Market optimization validation failed, using fallback parameters"), error);
+        optimizationValidation = null;
+      }
+      
+      logger.info(chalk.cyan("🚀 Executing arbitrage opportunity (All systems approved)"), {
         id: opportunity.id,
         profit: formatEther(opportunity.netProfit),
         spread: opportunity.spread,
@@ -1215,13 +1282,24 @@ class EnhancedMEVBot {
   async stop(): Promise<void> {
     logger.info(chalk.yellow("🛑 Stopping Enhanced MEV Bot..."));
     
+    // Stop Market Optimization Protocol
+    try {
+      await this.optimizationCoordinator?.stop();
+      logger.info(chalk.magenta("🎯 Market Optimization Protocol stopped"));
+    } catch (error) {
+      logger.warn(chalk.yellow("⚠️ Error stopping Market Optimization Protocol"), error);
+    }
+    
     // Log final statistics
+    const optimizationStatus = this.optimizationCoordinator?.getOptimizationStatus();
     logger.info(chalk.blue("📊 Final Statistics"), {
       totalProfit: formatEther(this.totalProfit),
       totalLoss: formatEther(this.totalLoss),
       netProfit: formatEther(this.totalProfit - this.totalLoss),
       executionCount: this.executionCount,
-      circuitBreakerTripped: this.circuitBreakerTripped
+      circuitBreakerTripped: this.circuitBreakerTripped,
+      optimizationsPerformed: optimizationStatus?.totalOptimizations || 0,
+      performanceImprovement: optimizationStatus?.performanceImprovement || 0
     });
     
     logger.info(chalk.yellow("✅ Enhanced MEV bot stopped"));
@@ -1250,12 +1328,13 @@ class EnhancedMEVBot {
     try {
       // Use L2GasManager for accurate gas estimation
       if (this.l2GasManager) {
-        const gasEstimate = await this.l2GasManager.estimateOptimalGas(
+        const gasLimit = await this.l2GasManager.estimateOptimalGasLimit(
           opportunity.chainId,
-          opportunity.contractCall,
-          'high'
+          'flash-arbitrage'
         );
-        return gasEstimate.totalCost;
+        // Estimate total cost by multiplying gas limit with current gas price
+        const gasPrice = parseUnits("0.1", "gwei"); // Default L2 gas price
+        return gasLimit * gasPrice;
       }
       
       // Fallback to basic estimation

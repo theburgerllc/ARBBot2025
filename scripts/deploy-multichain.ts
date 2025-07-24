@@ -47,8 +47,9 @@ async function deployToNetwork(networkName: string, addresses: any) {
 }
 
 async function main() {
-  const networkName = (await hre.ethers.provider.getNetwork()).name;
-  const chainId = (await hre.ethers.provider.getNetwork()).chainId;
+  const network = await hre.ethers.provider.getNetwork();
+  const networkName = network.name;
+  const chainId = network.chainId;
   
   console.log(chalk.yellow(`🔗 Deploying to network: ${networkName} (Chain ID: ${chainId})`));
   

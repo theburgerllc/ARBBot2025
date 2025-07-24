@@ -148,9 +148,9 @@ class TestnetAutomation {
     
     for (const config of this.TESTNET_CONFIGS) {
       try {
-        const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+        const provider = new ethers.JsonRpcProvider(config.rpcUrl);
         const balance = await provider.getBalance(this.walletAddress);
-        const balanceEth = ethers.utils.formatEther(balance);
+        const balanceEth = ethers.formatEther(balance);
         balances[config.name] = balanceEth;
         
         const hasEnough = parseFloat(balanceEth) >= parseFloat(config.requiredBalance);

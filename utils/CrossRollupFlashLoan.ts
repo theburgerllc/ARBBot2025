@@ -173,7 +173,7 @@ export class CrossRollupFlashLoan {
   private async getTokenPrice(tokenAddress: string, chainId: number): Promise<number> {
     try {
       // Try to get price from Symbiosis first
-      const symbiosisPrice = await this.symbiosisIntegration.getTokenPrice?.(tokenAddress, chainId);
+      const symbiosisPrice = await (this.symbiosisIntegration as any).getTokenPrice?.(tokenAddress, chainId);
       if (symbiosisPrice) {
         return parseFloat(symbiosisPrice);
       }
@@ -321,7 +321,7 @@ export class CrossRollupFlashLoan {
       console.error('Error executing cross-rollup flash loan:', error);
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -422,7 +422,7 @@ export class CrossRollupFlashLoan {
       };
     } catch (error) {
       console.error('Error waiting for transaction:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 

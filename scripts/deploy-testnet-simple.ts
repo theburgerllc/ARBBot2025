@@ -9,7 +9,7 @@
  * - Testnet environment setup and validation
  */
 
-import { ethers } from 'ethers';
+import { ethers, JsonRpcProvider, parseEther, formatEther, formatUnits, Wallet, ContractFactory } from 'ethers';
 import { config } from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -106,11 +106,11 @@ class SimpleTestnetDeployer {
 
     // Test RPC connectivity
     try {
-      const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+      const provider = new JsonRpcProvider(config.rpcUrl);
       const blockNumber = await provider.getBlockNumber();
       const network = await provider.getNetwork();
       
-      if (network.chainId !== config.chainId) {
+      if (network.chainId !== BigInt(config.chainId)) {
         throw new Error(`Chain ID mismatch: expected ${config.chainId}, got ${network.chainId}`);
       }
       
@@ -124,20 +124,20 @@ class SimpleTestnetDeployer {
 
   async checkBalance(networkName: string): Promise<void> {
     const config = this.configs.get(networkName)!;
-    const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
-    const wallet = new ethers.Wallet(config.privateKey, provider);
+    const provider = new JsonRpcProvider(config.rpcUrl);
+    const wallet = new Wallet(config.privateKey, provider);
     
     console.log(chalk.blue(`💰 Checking balance for deployment on ${networkName}...`));
     
     const balance = await provider.getBalance(wallet.address);
-    const balanceEth = ethers.utils.formatEther(balance);
-    const requiredBalanceWei = ethers.utils.parseEther(config.requiredBalance);
+    const balanceEth = formatEther(balance);
+    const requiredBalanceWei = parseEther(config.requiredBalance);
     
     console.log(chalk.white(`  Wallet address: ${wallet.address}`));
     console.log(chalk.white(`  Current balance: ${balanceEth} ETH`));
     console.log(chalk.white(`  Required balance: ${config.requiredBalance} ETH`));
     
-    if (balance.lt(requiredBalanceWei)) {
+    if (balance < requiredBalanceWei) {
       throw new Error(`Insufficient balance. Need ${config.requiredBalance} ETH, have ${balanceEth} ETH. Please fund the wallet first.`);
     }
 
@@ -173,12 +173,12 @@ class SimpleTestnetDeployer {
     console.log(chalk.blue(`🚀 Deploying FlashArbBotBalancer to ${networkName}...`));
     
     // Setup provider and wallet
-    const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
-    const wallet = new ethers.Wallet(config.privateKey, provider);
+    const provider = new JsonRpcProvider(config.rpcUrl);
+    const wallet = new Wallet(config.privateKey, provider);
     const balance = await provider.getBalance(wallet.address);
     
     console.log(chalk.white(`  Deployer address: ${wallet.address}`));
-    console.log(chalk.white(`  Deployer balance: ${ethers.utils.formatEther(balance)} ETH`));
+    console.log(chalk.white(`  Deployer balance: ${formatEther(balance)} ETH`));
     console.log(chalk.white(`  Network: ${networkName} (Chain ID: ${config.chainId})`));
 
     // Get contract artifacts
@@ -189,20 +189,21 @@ class SimpleTestnetDeployer {
     }
 
     // Create contract factory
-    const contractFactory = new ethers.ContractFactory(abi, bytecode, wallet);
+    const contractFactory = new ContractFactory(abi, bytecode, wallet);
     
     // Estimate gas for deployment
-    const deploymentTx = contractFactory.getDeployTransaction(
+    const deploymentTx = await contractFactory.getDeployTransaction(
       config.uniV2Router,
       config.sushiRouter,
       config.balancerVault
     );
 
     const gasEstimate = await provider.estimateGas(deploymentTx);
-    const gasPrice = await provider.getGasPrice();
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || BigInt(20000000000); // 20 gwei fallback
     
     console.log(chalk.gray(`  Estimated gas: ${gasEstimate.toString()}`));
-    console.log(chalk.gray(`  Gas price: ${ethers.utils.formatUnits(gasPrice, 'gwei')} gwei`));
+    console.log(chalk.gray(`  Gas price: ${formatUnits(gasPrice, 'gwei')} gwei`));
 
     // Deploy contract
     console.log(chalk.yellow(`  ⏳ Deploying contract...`));
@@ -213,7 +214,7 @@ class SimpleTestnetDeployer {
       config.sushiRouter,
       config.balancerVault,
       {
-        gasLimit: gasEstimate.mul(120).div(100), // Add 20% buffer
+        gasLimit: gasEstimate * BigInt(120) / BigInt(100), // Add 20% buffer
         gasPrice: gasPrice
       }
     );
@@ -231,7 +232,7 @@ class SimpleTestnetDeployer {
     
     console.log(chalk.white(`  🧾 Transaction Hash: ${receipt.transactionHash}`));
     console.log(chalk.white(`  ⛽ Gas Used: ${receipt.gasUsed.toString()}`));
-    console.log(chalk.white(`  💰 Gas Price: ${ethers.utils.formatUnits(receipt.effectiveGasPrice || gasPrice, 'gwei')} gwei`));
+    console.log(chalk.white(`  💰 Gas Price: ${formatUnits(receipt.effectiveGasPrice || gasPrice, 'gwei')} gwei`));
     console.log(chalk.white(`  🏗️ Block Number: ${receipt.blockNumber}`));
 
     // Verify deployment
@@ -254,7 +255,7 @@ class SimpleTestnetDeployer {
       contractAddress: contract.address,
       deploymentBlock: receipt.blockNumber,
       gasUsed: receipt.gasUsed.toString(),
-      gasPrice: ethers.utils.formatUnits(receipt.effectiveGasPrice || gasPrice, 'gwei'),
+      gasPrice: formatUnits(receipt.effectiveGasPrice || gasPrice, 'gwei'),
       transactionHash: receipt.transactionHash
     };
   }
@@ -273,7 +274,7 @@ class SimpleTestnetDeployer {
       gasPrice: result.gasPrice,
       explorerUrl: `${config.explorerUrl}/address/${result.contractAddress}`,
       rpcUrl: config.rpcUrl,
-      deployerAddress: new ethers.Wallet(config.privateKey).address
+      deployerAddress: new Wallet(config.privateKey).address
     };
 
     const reportPath = path.join(process.cwd(), `deployment-${networkName}-${Date.now()}.json`);
