@@ -1,6 +1,6 @@
-import { ethers } from "hardhat";
+import hre, { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 
 // Known whale addresses for mainnet fork testing
