@@ -1,0 +1,14 @@
+{
+  "network": "optimism",
+  "chainId": "10",
+  "timestamp": "2025-07-25T06:14:24.407Z",
+  "contractAddress": "0x9F83Eb14Ae97467581A0dC4b033CB99b0E99930b",
+  "owner": "0xc51d362389fB8665BebB48999399fe6f06EcAB10",
+  "deployer": "0xc51d362389fB8665BebB48999399fe6f06EcAB10",
+  "addresses": {
+    "balancerVault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+    "sushiRouter": "0x2ABf469074dc0b54d793850807E6eb5Faf2625b1",
+    "uniRouter": "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2",
+    "uniV3Quoter": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
+  }
+}

@@ -1,0 +1,36 @@
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-24T23:22:38.018Z","timestamp":"2025-07-24T23:22:38.020Z"}
+{"enabled":false,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-24T23:22:38.020Z"}
+{"level":"info","message":"Market optimization disabled in configuration","timestamp":"2025-07-24T23:22:38.642Z"}
+{"enabled":false,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-24T23:26:30.518Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-24T23:26:30.516Z","timestamp":"2025-07-24T23:26:30.517Z"}
+{"level":"info","message":"Market optimization disabled in configuration","timestamp":"2025-07-24T23:26:30.866Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T04:18:43.780Z","timestamp":"2025-07-25T04:18:43.782Z"}
+{"enabled":false,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T04:18:43.782Z"}
+{"enabled":true,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T06:11:19.471Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T06:11:19.468Z","timestamp":"2025-07-25T06:11:19.470Z"}
+{"level":"info","message":"Initializing optimization coordination","timestamp":"2025-07-25T06:11:19.790Z"}
+{"level":"info","message":"Optimization coordination started successfully","timestamp":"2025-07-25T06:11:19.926Z"}
+{"enabled":true,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T06:18:22.982Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T06:18:22.980Z","timestamp":"2025-07-25T06:18:22.981Z"}
+{"level":"info","message":"Initializing optimization coordination","timestamp":"2025-07-25T06:18:23.263Z"}
+{"level":"info","message":"Optimization coordination started successfully","timestamp":"2025-07-25T06:18:23.392Z"}
+{"enabled":true,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T06:32:00.873Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T06:32:00.872Z","timestamp":"2025-07-25T06:32:00.873Z"}
+{"level":"info","message":"Initializing optimization coordination","timestamp":"2025-07-25T06:32:01.082Z"}
+{"level":"info","message":"Optimization coordination started successfully","timestamp":"2025-07-25T06:32:01.211Z"}
+{"enabled":true,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T06:42:31.864Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T06:42:31.862Z","timestamp":"2025-07-25T06:42:31.863Z"}
+{"level":"info","message":"Initializing optimization coordination","timestamp":"2025-07-25T06:42:32.078Z"}
+{"level":"info","message":"Optimization coordination started successfully","timestamp":"2025-07-25T06:42:32.219Z"}
+{"enabled":true,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T06:52:58.279Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T06:52:58.276Z","timestamp":"2025-07-25T06:52:58.278Z"}
+{"level":"info","message":"Initializing optimization coordination","timestamp":"2025-07-25T06:52:58.502Z"}
+{"level":"info","message":"Optimization coordination started successfully","timestamp":"2025-07-25T06:52:58.621Z"}
+{"enabled":true,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T06:58:30.610Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T06:58:30.608Z","timestamp":"2025-07-25T06:58:30.609Z"}
+{"level":"info","message":"Initializing optimization coordination","timestamp":"2025-07-25T06:58:30.848Z"}
+{"level":"info","message":"Optimization coordination started successfully","timestamp":"2025-07-25T06:58:31.021Z"}
+{"enabled":true,"frequency":300000,"level":"info","message":"OptimizationCoordinator initialized","primaryChain":42161,"timestamp":"2025-07-25T07:12:44.728Z"}
+{"component":"OptimizationMonitor","level":"info","logFile":"optimization-coordinator.log","message":"OptimizationMonitor initialized","startTime":"2025-07-25T07:12:44.726Z","timestamp":"2025-07-25T07:12:44.727Z"}
+{"level":"info","message":"Initializing optimization coordination","timestamp":"2025-07-25T07:12:45.013Z"}
+{"level":"info","message":"Optimization coordination started successfully","timestamp":"2025-07-25T07:12:45.140Z"}

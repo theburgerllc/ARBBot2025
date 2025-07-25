@@ -1,0 +1,31 @@
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":false,"timestamp":"2025-07-24T23:22:38.018Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":false,"timestamp":"2025-07-24T23:26:30.515Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":false,"timestamp":"2025-07-25T04:18:43.780Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":true,"timestamp":"2025-07-25T06:11:19.468Z"}
+{"level":"info","message":"Starting optimization initialization","primaryChainId":42161,"timestamp":"2025-07-25T06:11:19.791Z"}
+{"confidence":0.5800000000000001,"level":"info","message":"Initial market analysis complete","recommendation":"balanced","regime":"sideways","timestamp":"2025-07-25T06:11:19.926Z"}
+{"level":"info","message":"Optimization engine started successfully","timestamp":"2025-07-25T06:11:19.926Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":true,"timestamp":"2025-07-25T06:18:22.979Z"}
+{"level":"info","message":"Starting optimization initialization","primaryChainId":42161,"timestamp":"2025-07-25T06:18:23.263Z"}
+{"confidence":0.5800000000000001,"level":"info","message":"Initial market analysis complete","recommendation":"balanced","regime":"sideways","timestamp":"2025-07-25T06:18:23.391Z"}
+{"level":"info","message":"Optimization engine started successfully","timestamp":"2025-07-25T06:18:23.391Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":true,"timestamp":"2025-07-25T06:32:00.871Z"}
+{"level":"info","message":"Starting optimization initialization","primaryChainId":42161,"timestamp":"2025-07-25T06:32:01.082Z"}
+{"confidence":0.5800000000000001,"level":"info","message":"Initial market analysis complete","recommendation":"balanced","regime":"sideways","timestamp":"2025-07-25T06:32:01.210Z"}
+{"level":"info","message":"Optimization engine started successfully","timestamp":"2025-07-25T06:32:01.210Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":true,"timestamp":"2025-07-25T06:42:31.861Z"}
+{"level":"info","message":"Starting optimization initialization","primaryChainId":42161,"timestamp":"2025-07-25T06:42:32.078Z"}
+{"confidence":0.5800000000000001,"level":"info","message":"Initial market analysis complete","recommendation":"balanced","regime":"sideways","timestamp":"2025-07-25T06:42:32.218Z"}
+{"level":"info","message":"Optimization engine started successfully","timestamp":"2025-07-25T06:42:32.218Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":true,"timestamp":"2025-07-25T06:52:58.275Z"}
+{"level":"info","message":"Starting optimization initialization","primaryChainId":42161,"timestamp":"2025-07-25T06:52:58.503Z"}
+{"confidence":0.5800000000000001,"level":"info","message":"Initial market analysis complete","recommendation":"balanced","regime":"sideways","timestamp":"2025-07-25T06:52:58.620Z"}
+{"level":"info","message":"Optimization engine started successfully","timestamp":"2025-07-25T06:52:58.620Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":true,"timestamp":"2025-07-25T06:58:30.607Z"}
+{"level":"info","message":"Starting optimization initialization","primaryChainId":42161,"timestamp":"2025-07-25T06:58:30.849Z"}
+{"confidence":0.5800000000000001,"level":"info","message":"Initial market analysis complete","recommendation":"balanced","regime":"sideways","timestamp":"2025-07-25T06:58:31.020Z"}
+{"level":"info","message":"Optimization engine started successfully","timestamp":"2025-07-25T06:58:31.020Z"}
+{"chainsConfigured":2,"level":"info","message":"Market Optimization Engine initialized","optimizationEnabled":true,"timestamp":"2025-07-25T07:12:44.725Z"}
+{"level":"info","message":"Starting optimization initialization","primaryChainId":42161,"timestamp":"2025-07-25T07:12:45.013Z"}
+{"confidence":0.5800000000000001,"level":"info","message":"Initial market analysis complete","recommendation":"balanced","regime":"sideways","timestamp":"2025-07-25T07:12:45.139Z"}
+{"level":"info","message":"Optimization engine started successfully","timestamp":"2025-07-25T07:12:45.140Z"}

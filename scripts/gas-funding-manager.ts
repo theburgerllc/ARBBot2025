@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import chalk from 'chalk';
+import EnhancedCrossChainGasManager from './enhanced-cross-chain-gas-manager';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ export class GasFundingManager {
   private contract!: ethers.Contract; // Initialized in init()
   private config: GasFundingConfig;
   private isRunning: boolean = false;
+  private crossChainManager?: EnhancedCrossChainGasManager;
 
   constructor() {
     if (!process.env.ARB_RPC || !process.env.PRIVATE_KEY) {
@@ -36,10 +38,10 @@ export class GasFundingManager {
     this.provider = new ethers.JsonRpcProvider(process.env.ARB_RPC);
     this.wallet = new ethers.Wallet(process.env.PRIVATE_KEY, this.provider);
     
-    // Default configuration
+    // Default configuration - Updated for new wallet
     this.config = {
       enabled: true,
-      gasFundingWallet: '0x0696674781903E433dc4189a8B4901FEF4920985',
+      gasFundingWallet: '0xF68c01BaE2Daa708C004F485631C7213b45d1Cac', // New executor wallet
       fundingPercentage: 10, // 10% of profits
       targetGasReserve: ethers.parseEther('0.01'), // 0.01 ETH target
       maxGasReserve: ethers.parseEther('0.05'), // 0.05 ETH maximum
@@ -59,6 +61,15 @@ export class GasFundingManager {
     ];
 
     this.contract = new ethers.Contract(contractAddress, contractABI, this.wallet);
+    
+    // Initialize enhanced cross-chain gas manager
+    try {
+      this.crossChainManager = new EnhancedCrossChainGasManager();
+      await this.crossChainManager.initialize();
+      console.log(chalk.green('✅ Enhanced cross-chain gas manager integrated'));
+    } catch (error) {
+      console.log(chalk.yellow('⚠️ Cross-chain manager not available:', error));
+    }
     
     console.log(chalk.green('🔧 Gas Funding Manager initialized'));
     console.log(chalk.cyan(`📍 Contract: ${contractAddress}`));
@@ -144,8 +155,28 @@ export class GasFundingManager {
 
         // Check if gas balance is too low
         if (stats.currentGasBalance < this.config.targetGasReserve) {
-          console.log(chalk.yellow('🔽 Gas balance below target - checking for manual withdrawal opportunity'));
-          await this.checkManualWithdrawal(stats);
+          console.log(chalk.yellow('🔽 Gas balance below target - checking cross-chain funding and manual withdrawal'));
+          
+          // Try cross-chain funding first
+          if (this.crossChainManager) {
+            try {
+              console.log(chalk.blue('🌉 Triggering cross-chain gas funding...'));
+              const allBalances = await this.crossChainManager.getAllGasBalances();
+              const operations = await this.crossChainManager.executeAutomaticBridging(allBalances);
+              
+              if (operations.length > 0) {
+                console.log(chalk.green(`✅ Initiated ${operations.length} cross-chain funding operation(s)`));
+              } else {
+                console.log(chalk.yellow('⚠️ No cross-chain funding needed, checking manual withdrawal'));
+                await this.checkManualWithdrawal(stats);
+              }
+            } catch (error) {
+              console.log(chalk.red('❌ Cross-chain funding failed, falling back to manual withdrawal'));
+              await this.checkManualWithdrawal(stats);
+            }
+          } else {
+            await this.checkManualWithdrawal(stats);
+          }
         }
 
         // Check if gas balance is too high (pause auto-funding temporarily)
@@ -243,7 +274,27 @@ export class GasFundingManager {
 
   stopMonitoring(): void {
     this.isRunning = false;
+    if (this.crossChainManager) {
+      this.crossChainManager.stopMonitoring();
+    }
     console.log(chalk.yellow('⏹️ Gas funding monitor stopped'));
+  }
+
+  async getCrossChainStatus(): Promise<void> {
+    if (this.crossChainManager) {
+      await this.crossChainManager.getStatus();
+    } else {
+      console.log(chalk.yellow('⚠️ Cross-chain manager not available'));
+    }
+  }
+
+  async emergencyCrossChainFunding(): Promise<void> {
+    if (this.crossChainManager) {
+      console.log(chalk.red('🚨 Triggering emergency cross-chain funding...'));
+      await this.crossChainManager.emergencyFundAll();
+    } else {
+      console.log(chalk.red('❌ Cross-chain manager not available for emergency funding'));
+    }
   }
 }
 
@@ -294,13 +345,23 @@ async function main() {
         await manager.emergencyDisableGasFunding();
         break;
 
+      case 'cross-chain-status':
+        await manager.getCrossChainStatus();
+        break;
+
+      case 'emergency-cross-chain':
+        await manager.emergencyCrossChainFunding();
+        break;
+
       default:
         console.log(chalk.blue('Gas Funding Manager Commands:'));
-        console.log(chalk.cyan('  setup    - Configure gas funding (run once)'));
-        console.log(chalk.cyan('  monitor  - Start continuous monitoring'));
-        console.log(chalk.cyan('  status   - Show current status'));
-        console.log(chalk.cyan('  adjust X - Set funding percentage to X%'));
-        console.log(chalk.cyan('  disable  - Emergency disable gas funding'));
+        console.log(chalk.cyan('  setup                - Configure gas funding (run once)'));
+        console.log(chalk.cyan('  monitor              - Start continuous monitoring'));
+        console.log(chalk.cyan('  status               - Show current status'));
+        console.log(chalk.cyan('  cross-chain-status   - Show cross-chain gas status'));
+        console.log(chalk.cyan('  adjust X             - Set funding percentage to X%'));
+        console.log(chalk.cyan('  disable              - Emergency disable gas funding'));
+        console.log(chalk.cyan('  emergency-cross-chain - Emergency fund all chains'));
         break;
     }
 

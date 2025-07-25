@@ -57,8 +57,7 @@ const config: HardhatUserConfig = {
       chainId: 31337,
       gas: 30000000,
       gasPrice: 1000000000,
-      allowUnlimitedContractSize: true,
-      timeout: 60000
+      allowUnlimitedContractSize: true
     },
     hardhat_arbitrum: {
       url: "http://127.0.0.1:8545",
@@ -102,15 +101,15 @@ const config: HardhatUserConfig = {
     showTimeSpent: true,
     showMethodSig: true
   },
-  etherscan: {
-    apiKey: {
-      arbitrumOne: process.env.ARBISCAN_API_KEY || "",
-      optimisticEthereum: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || "",
-      mainnet: process.env.ETHERSCAN_API_KEY || "",
-      arbitrumSepolia: process.env.ARBISCAN_API_KEY || "",
-      optimismSepolia: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || ""
-    }
-  },
+  // etherscan: {
+  //   apiKey: {
+  //     arbitrumOne: process.env.ARBISCAN_API_KEY || "",
+  //     optimisticEthereum: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || "",
+  //     mainnet: process.env.ETHERSCAN_API_KEY || "",
+  //     arbitrumSepolia: process.env.ARBISCAN_API_KEY || "",
+  //     optimismSepolia: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || ""
+  //   }
+  // },
   mocha: {
     timeout: 300000, // 5 minutes
     slow: 30000      // 30 seconds
@@ -121,10 +120,10 @@ const config: HardhatUserConfig = {
     cache: "./cache",
     artifacts: "./artifacts"
   },
-  typechain: {
-    outDir: "typechain",
-    target: "ethers-v6"
-  }
+  // typechain: {
+  //   outDir: "typechain",
+  //   target: "ethers-v6"
+  // }
 };
 
 import "./tasks/deploy-arb";

@@ -142,6 +142,9 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     mapping(address => address) public priceFeeds;
     mapping(address => bool) public authorizedCallers;
     
+    // Profit management configuration
+    address public profitWallet;
+    
     // Gas funding configuration
     address public gasFundingWallet;
     uint256 public gasFundingPercentage = 1000; // 10% in basis points (10% = 1000 bps)
@@ -196,6 +199,8 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     
     event ProfitWithdrawn(address indexed token, uint256 amount);
     
+    event ProfitWalletUpdated(address indexed oldWallet, address indexed newWallet);
+    
     event GasFundingTransfer(
         address indexed token,
         uint256 amount,
@@ -237,6 +242,9 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
             sushiRouterNew = IUniswapV2Router02(SUSHI_ROUTER_OPT);
             aavePool = IPool(AAVE_POOL_OPTIMISM);
         }
+        
+        // Initialize profit wallet to owner (can be changed later)
+        profitWallet = owner();
     }
 
     function setAuthorizedCaller(address caller, bool authorized) external onlyOwner {
@@ -255,6 +263,14 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     
     function setPriceFeed(address token, address feed) external onlyOwner {
         priceFeeds[token] = feed;
+    }
+    
+    // Profit wallet configuration
+    function setProfitWallet(address _profitWallet) external onlyOwner {
+        require(_profitWallet != address(0), "Invalid profit wallet address");
+        address oldWallet = profitWallet;
+        profitWallet = _profitWallet;
+        emit ProfitWalletUpdated(oldWallet, _profitWallet);
     }
     
     // Gas funding configuration functions
@@ -681,14 +697,14 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     function withdraw(address token) external onlyOwner {
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(balance > 0, "No balance to withdraw");
-        IERC20(token).transfer(owner(), balance);
+        IERC20(token).transfer(profitWallet, balance);
         emit ProfitWithdrawn(token, balance);
     }
     
     function emergencyWithdraw(address token) external onlyOwner {
         uint256 balance = IERC20(token).balanceOf(address(this));
         if (balance > 0) {
-            IERC20(token).transfer(owner(), balance);
+            IERC20(token).transfer(profitWallet, balance);
         }
     }
     

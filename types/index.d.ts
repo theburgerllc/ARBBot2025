@@ -151,6 +151,9 @@ declare global {
       PRIVATE_KEY: string;
       FLASHBOTS_AUTH_KEY: string;
       
+      // Profit management
+      PROFIT_WALLET_ADDRESS?: string;
+      
       // RPC endpoints
       ARB_RPC: string;
       OPT_RPC: string;

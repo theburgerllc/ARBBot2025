@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-07-24T23:18:16.199Z",
+  "walletAddress": "Not configured",
+  "forkTests": [],
+  "summary": {
+    "totalTests": 0,
+    "successfulDeployments": 0,
+    "totalGasUsed": "0",
+    "totalCost": "0.0"
+  }
+}

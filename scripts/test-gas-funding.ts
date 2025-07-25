@@ -16,8 +16,8 @@ async function testGasFundingSystem() {
   const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC);
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
   
-  // Gas funding wallet address
-  const gasFundingWallet = '0x0696674781903E433dc4189a8B4901FEF4920985';
+  // Gas funding wallet address - Updated for new wallet
+  const gasFundingWallet = '0xF68c01BaE2Daa708C004F485631C7213b45d1Cac';
 
   console.log(chalk.cyan(`🔗 Connected to: ${await provider.getNetwork().then(n => n.name)}`));
   console.log(chalk.cyan(`👤 Wallet: ${wallet.address}`));
