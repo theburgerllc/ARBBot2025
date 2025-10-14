@@ -101,6 +101,18 @@ The deployment script will:
 npm run bot:start
 ```
 
+### Launch Centralized Exchange Arbitrage Bot
+
+1. Configure the centralized exchange credentials and risk parameters in `.env` (see the `CENTRALIZED EXCHANGE ARBITRAGE` section in `.env.example`).
+2. Ensure each target exchange account is pre-funded with sufficient base and quote assets. The bot does not perform on-chain transfers between venues.
+3. Run the CEX arbitrage engine:
+
+```bash
+npm run bot:cex
+```
+
+The script starts in simulation mode by default (`CEX_SIMULATION_MODE=true`). Set `CEX_SIMULATION_MODE=false` and enable per-exchange `*_ENABLE_TRADING=true` to place live orders. Detailed trade results are appended to `logs/cex-performance.log`.
+
 ### Simulate Opportunities (No Execution)
 
 ```bash

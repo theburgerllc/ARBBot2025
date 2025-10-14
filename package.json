@@ -46,6 +46,7 @@
     "bot:parallel": "ts-node scripts/run-bot-parallel.ts",
     "bot:parallel:simulate": "ts-node scripts/run-bot-parallel.ts --simulate --verbose",
     "bot:parallel:test": "ts-node scripts/run-bot-parallel.ts --simulate --verbose --duration 600 --workers 4",
+    "bot:cex": "ts-node scripts/run-cex-arb.ts",
     "simulate:flashbots:parallel": "ts-node scripts/simulate-flashbots-parallel.ts",
     "bot:arbitrum": "ENABLE_CROSS_CHAIN_MONITORING=false ts-node scripts/run-bot.ts",
     "bot:optimism": "ENABLE_CROSS_CHAIN_MONITORING=false ts-node scripts/run-bot.ts",
