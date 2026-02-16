@@ -51,28 +51,36 @@ export class TriangularArbManager {
         ['WETH', 'FRAX', 'USDC'],  // Frax ecosystem
         ['WBTC', 'USDC', 'DAI'],   // Bitcoin-stable rotation
         ['WETH', 'ARB', 'USDC'],   // Native token arbitrage (Arbitrum)
-        ['WETH', 'OP', 'USDC']     // Native token arbitrage (Optimism)
+        ['WETH', 'OP', 'USDC'],    // Native token arbitrage (Optimism)
+        // LST spread triangular paths
+        ['WETH', 'wstETH', 'USDC'],  // ETH -> wstETH -> USDC -> ETH
+        ['WETH', 'rETH', 'USDC'],    // ETH -> rETH -> USDC -> ETH
+        ['wstETH', 'WETH', 'USDT'],  // wstETH -> ETH -> USDT -> wstETH
     ];
 
     // Token addresses by chain
     private readonly TOKEN_ADDRESSES = {
         42161: { // Arbitrum
             'WETH': '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-            'USDC': '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+            'USDC': '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC (Circle)
             'USDT': '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
             'WBTC': '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f',
             'DAI': '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
             'FRAX': '0x17FC002b466eEc40DaE837Fc4bE5c67993ddBd6F',
-            'ARB': '0x912CE59144191C1204E64559FE8253a0e49E6548'
+            'ARB': '0x912CE59144191C1204E64559FE8253a0e49E6548',
+            'wstETH': '0x5979D7b546E38E414F7E9822514be443A4800529',
+            'rETH': '0xEC70Dcb4A1EFa46b8F2D97C310C9c4790ba5ffA8'
         },
         10: { // Optimism
             'WETH': '0x4200000000000000000000000000000000000006',
-            'USDC': '0x7F5c764cBc14f9669B88837ca1490cCa17c31607',
+            'USDC': '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', // Native USDC (Circle)
             'USDT': '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
             'WBTC': '0x68f180fcCe6836688e9084f035309E29Bf0A2095',
             'DAI': '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
             'FRAX': '0x2E3D870790dC77A83DD1d18184Acc7439A53f475',
-            'OP': '0x4200000000000000000000000000000000000042'
+            'OP': '0x4200000000000000000000000000000000000042',
+            'wstETH': '0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb',
+            'rETH': '0x9Bcef72be871e61ED4fBbc7630889beE758eb81D'
         }
     };
 

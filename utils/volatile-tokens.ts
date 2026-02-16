@@ -36,8 +36,13 @@ export class VolatileTokenTracker {
       },
       {
         symbol: "USDC",
-        address: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8", 
+        address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // Native USDC (Circle)
         baseVolatility: 0.02
+      },
+      {
+        symbol: "USDC.e",
+        address: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8", // Bridged USDC.e
+        baseVolatility: 0.03
       },
       {
         symbol: "WBTC",
@@ -103,9 +108,26 @@ export class VolatileTokenTracker {
         symbol: "CVX",
         address: "0xb952A807345991BD529FDded05009F5e80Fe8F45",
         baseVolatility: 0.65
+      },
+      // LST tokens for ETH spread arbitrage
+      {
+        symbol: "wstETH",
+        address: "0x5979D7b546E38E414F7E9822514be443A4800529",
+        baseVolatility: 0.12
+      },
+      {
+        symbol: "rETH",
+        address: "0xEC70Dcb4A1EFa46b8F2D97C310C9c4790ba5ffA8",
+        baseVolatility: 0.13
+      },
+      // DeFi tokens
+      {
+        symbol: "PENDLE",
+        address: "0x0c880f6761F1af8d9Aa9C466984b80DAb9a8c9e8",
+        baseVolatility: 0.55
       }
     ],
-    
+
     // Optimism (10)
     10: [
       {
@@ -115,8 +137,13 @@ export class VolatileTokenTracker {
       },
       {
         symbol: "USDC",
-        address: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
+        address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", // Native USDC (Circle)
         baseVolatility: 0.02
+      },
+      {
+        symbol: "USDC.e",
+        address: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607", // Bridged USDC.e
+        baseVolatility: 0.03
       },
       {
         symbol: "USDT", 
@@ -172,6 +199,17 @@ export class VolatileTokenTracker {
         symbol: "CVX",
         address: "0xb952A807345991BD529FDded05009F5e80Fe8F45",
         baseVolatility: 0.65
+      },
+      // LST tokens for ETH spread arbitrage
+      {
+        symbol: "wstETH",
+        address: "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
+        baseVolatility: 0.12
+      },
+      {
+        symbol: "rETH",
+        address: "0x9Bcef72be871e61ED4fBbc7630889beE758eb81D",
+        baseVolatility: 0.13
       }
     ]
   };
@@ -186,18 +224,28 @@ export class VolatileTokenTracker {
     
     // Priority pairs with historical arbitrage opportunities
     const priorityPairs = [
-      ["ETH", "USDT"],   // 0.05% per-minute windows - STABLECORE
-      ["ETH", "USDC"],   // High liquidity, frequent spreads - STABLECORE
-      ["WBTC", "ETH"],   // BTC-ETH volatility - STABLECORE
-      ["ARB", "ETH"],    // Native token arbitrage
-      ["GMX", "ETH"],    // High volatility DeFi token
-      ["PENGU", "ETH"],  // High volatility meme token
-      ["BONK", "ETH"],   // High volatility meme token
-      ["MOG", "ETH"],    // Extremely high volatility
-      ["FUN", "ETH"],    // Gaming token volatility
-      ["XLM", "ETH"],    // Cross-chain bridge token
-      ["1INCH", "ETH"],  // DEX aggregator token
-      ["CVX", "ETH"],    // DeFi yield token
+      // STABLECORE - highest liquidity, most frequent spreads
+      ["ETH", "USDT"],   // 0.05% per-minute windows
+      ["ETH", "USDC"],   // High liquidity, frequent spreads
+      ["WBTC", "ETH"],   // BTC-ETH volatility
+      // Stablecoin depeg arbitrage (native vs bridged)
+      ["USDC", "USDC.e"], // Native vs bridged USDC depeg
+      // LST/ETH spread arbitrage
+      ["wstETH", "ETH"],  // Lido staked ETH spread
+      ["rETH", "ETH"],    // Rocket Pool staked ETH spread
+      // Native token arbitrage
+      ["ARB", "ETH"],     // Arbitrum native token
+      // DeFi tokens
+      ["GMX", "ETH"],     // High volatility DeFi
+      ["PENDLE", "ETH"],  // Yield tokenization
+      // Meme/volatile tokens
+      ["PENGU", "ETH"],   // High volatility meme token
+      ["BONK", "ETH"],    // High volatility meme token
+      ["MOG", "ETH"],     // Extremely high volatility
+      ["FUN", "ETH"],     // Gaming token volatility
+      ["XLM", "ETH"],     // Cross-chain bridge token
+      ["1INCH", "ETH"],   // DEX aggregator token
+      ["CVX", "ETH"],     // DeFi yield token
     ];
     
     // Add triangular arbitrage paths: ETH → volatile → USDC/USDT → ETH
@@ -403,8 +451,9 @@ export class VolatileTokenTracker {
   
   private static calculateLiquidityScore(symbolA: string, symbolB: string): number {
     // Higher scores for major pairs with deep liquidity
-    const majorTokens = ["ETH", "WETH", "USDC", "USDT", "WBTC"]; // STABLECORE
-    const defiTokens = ["ARB", "OP", "GMX", "SNX", "1INCH", "CVX"];
+    const majorTokens = ["ETH", "WETH", "USDC", "USDT", "WBTC", "USDC.e"]; // STABLECORE
+    const lstTokens = ["wstETH", "rETH"]; // Liquid Staking Tokens
+    const defiTokens = ["ARB", "OP", "GMX", "SNX", "1INCH", "CVX", "PENDLE"];
     const volatileTokens = ["PENGU", "FUN", "BONK", "MOG", "XLM"];
     
     let score = 1.0;
@@ -412,8 +461,14 @@ export class VolatileTokenTracker {
     // STABLECORE pairs get highest priority
     if (majorTokens.includes(symbolA) && majorTokens.includes(symbolB)) {
       score = 5.0; // Highest liquidity pairs (ETH-USDC, ETH-USDT, WBTC-ETH)
+    } else if (lstTokens.includes(symbolA) || lstTokens.includes(symbolB)) {
+      // LST/ETH pairs have deep liquidity from staking protocols
+      if (majorTokens.includes(symbolA) || majorTokens.includes(symbolB)) {
+        score = 4.5; // wstETH-ETH, rETH-ETH are very liquid
+      } else {
+        score = 3.5;
+      }
     } else if (majorTokens.includes(symbolA) || majorTokens.includes(symbolB)) {
-      // Volatile token paired with major token
       if (volatileTokens.includes(symbolA) || volatileTokens.includes(symbolB)) {
         score = 4.0; // High priority for volatile/major pairs
       } else {

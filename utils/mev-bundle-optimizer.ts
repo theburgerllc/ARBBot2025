@@ -94,8 +94,9 @@ export class MEVBundleOptimizer {
             gasStrategy,
             targetBlockNumber
         );
-        
-        // Step 5: Calculate bundle metrics
+
+        // Step 5: Store opportunities and calculate bundle metrics
+        this.lastBundleOpportunities = selectedOpportunities;
         const metrics = await this.calculateBundleMetrics(bundleTransactions);
         
         // Step 6: Generate optimization recommendations
@@ -353,26 +354,71 @@ export class MEVBundleOptimizer {
         targetBlock: number
     ): Promise<FlashbotsBundleTransaction[]> {
         const transactions: FlashbotsBundleTransaction[] = [];
-        
+        const contractAddress = process.env.BOT_CONTRACT_ADDRESS;
+
+        if (!contractAddress) {
+            console.warn("BOT_CONTRACT_ADDRESS not set, cannot create bundle transactions");
+            return transactions;
+        }
+
+        const botInterface = new (await import("ethers")).Interface([
+            "function executeArb(address asset, uint256 amount, address[] calldata path, bool sushiFirst, uint256 expectedProfit) external",
+            "function executeTriangularArb(address asset, uint256 amount, address[] calldata path, uint256 expectedProfit) external"
+        ]);
+
         for (const opp of opportunities) {
-            // Create transaction for this opportunity
-            const tx = {
+            // Encode actual contract call data
+            const isTriangular = opp.dexPath && opp.dexPath.length >= 4 &&
+                opp.dexPath[0] === opp.dexPath[opp.dexPath.length - 1];
+
+            let callData: string;
+            if (isTriangular) {
+                callData = botInterface.encodeFunctionData("executeTriangularArb", [
+                    opp.tokenA,
+                    BigInt(opp.amountIn),
+                    opp.dexPath,
+                    BigInt(opp.expectedProfit)
+                ]);
+            } else {
+                // Determine sushiFirst from the DEX path ordering
+                const sushiFirst = opp.dexPath?.[0]?.toLowerCase().includes('sushi') ?? false;
+                callData = botInterface.encodeFunctionData("executeArb", [
+                    opp.tokenA,
+                    BigInt(opp.amountIn),
+                    opp.dexPath.length > 0 ? opp.dexPath : [opp.tokenA, opp.tokenB],
+                    sushiFirst,
+                    BigInt(opp.expectedProfit)
+                ]);
+            }
+
+            const nonce = await this.provider.getTransactionCount(this.wallet.address);
+
+            const tx: FlashbotsBundleTransaction = {
                 signer: this.wallet,
                 transaction: {
-                    to: "0x" + "0".repeat(40), // Placeholder - would be actual contract address
-                    data: "0x", // Placeholder - would be actual call data
+                    to: contractAddress,
+                    data: callData,
                     gasLimit: BigInt(opp.gasEstimate),
                     maxFeePerGas: gasStrategy.maxFeePerGas,
                     maxPriorityFeePerGas: gasStrategy.maxPriorityFeePerGas,
                     type: 2,
-                    chainId: opp.chainId
+                    chainId: opp.chainId,
+                    nonce: nonce + transactions.length
                 }
             };
-            
+
             transactions.push(tx);
         }
-        
+
         return transactions;
+    }
+
+    // Track the last set of opportunities for profit calculation
+    private lastBundleOpportunities: ArbitrageOpportunity[] = [];
+
+    // Store opportunities during bundle creation for metrics
+    setOpportunitiesForMetrics(opportunities: ArbitrageOpportunity[]): void {
+        this.lastBundleOpportunities = opportunities;
     }
 
     private async calculateBundleMetrics(
@@ -384,28 +430,41 @@ export class MEVBundleOptimizer {
         successRate: number;
     }> {
         let totalGasCost = 0n;
-        let expectedProfit = parseUnits("0.1", 18); // Placeholder
-        
+
         for (const tx of bundle) {
             const gasLimit = BigInt(tx.transaction.gasLimit || 500000);
-            const gasPrice = BigInt(tx.transaction.maxFeePerGas || parseUnits("50", "gwei"));
+            const gasPrice = BigInt(tx.transaction.maxFeePerGas || parseUnits("0.1", "gwei"));
             totalGasCost += gasLimit * gasPrice;
         }
-        
+
+        // Calculate expected profit from the actual opportunities in this bundle
+        let expectedProfit = 0n;
+        for (const opp of this.lastBundleOpportunities) {
+            expectedProfit += BigInt(opp.netProfit || opp.expectedProfit || 0);
+        }
+
+        // If no tracked opportunities, try to estimate from bundle size
+        if (expectedProfit === 0n && bundle.length > 0) {
+            // Conservative minimum: each tx should earn at least 2x gas cost
+            expectedProfit = totalGasCost * 2n;
+        }
+
         // Calculate bundle score (0-100)
-        const profitMargin = expectedProfit > totalGasCost 
+        const profitMargin = expectedProfit > totalGasCost
             ? Number((expectedProfit - totalGasCost) * 100n / expectedProfit)
             : 0;
-        
+
         const bundleScore = Math.min(100, Math.max(0, profitMargin));
-        
+
         // Estimate success rate based on gas pricing and competition
-        let successRate = 70; // Base rate
-        
-        if (bundle.length > 3) successRate -= 10; // Complexity penalty
-        if (profitMargin < 20) successRate -= 20; // Low margin penalty
-        if (profitMargin > 50) successRate += 15; // High margin bonus
-        
+        let successRate = 70; // Base rate for L2 direct submission (no relay competition)
+
+        if (bundle.length > 3) successRate -= 10;
+        if (profitMargin < 20) successRate -= 20;
+        if (profitMargin > 50) successRate += 15;
+        // L2 bonus: sequencer inclusion is more predictable than mainnet Flashbots
+        successRate += 10;
+
         return {
             expectedProfit,
             totalGasCost,
@@ -459,8 +518,15 @@ export class MEVBundleOptimizer {
     }
 
     private calculateSimulationProfit(results: any[]): bigint {
-        // Placeholder - would calculate actual profit from simulation results
-        return parseUnits("0.05", 18); // 0.05 ETH
+        if (!results || results.length === 0) return 0n;
+
+        let totalProfit = 0n;
+        for (const result of results) {
+            if (result && result.value) {
+                totalProfit += BigInt(result.value);
+            }
+        }
+        return totalProfit > 0n ? totalProfit : 0n;
     }
 
     private async prepareForPublicMempool(

@@ -1,4 +1,27 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MEVBundleOptimizer = void 0;
 const ethers_1 = require("ethers");
@@ -29,7 +52,8 @@ class MEVBundleOptimizer {
         const gasStrategy = await this.optimizeBundleGasPricing(selectedOpportunities, targetBlockNumber);
         // Step 4: Create bundle transactions
         const bundleTransactions = await this.createBundleTransactions(selectedOpportunities, gasStrategy, targetBlockNumber);
-        // Step 5: Calculate bundle metrics
+        // Step 5: Store opportunities and calculate bundle metrics
+        this.lastBundleOpportunities = selectedOpportunities;
         const metrics = await this.calculateBundleMetrics(bundleTransactions);
         // Step 6: Generate optimization recommendations
         const recommendations = this.generateOptimizationRecommendations(metrics, selectedOpportunities);
@@ -226,31 +250,79 @@ class MEVBundleOptimizer {
     }
     async createBundleTransactions(opportunities, gasStrategy, targetBlock) {
         const transactions = [];
+        const contractAddress = process.env.BOT_CONTRACT_ADDRESS;
+        if (!contractAddress) {
+            console.warn("BOT_CONTRACT_ADDRESS not set, cannot create bundle transactions");
+            return transactions;
+        }
+        const botInterface = new (await Promise.resolve().then(() => __importStar(require("ethers")))).Interface([
+            "function executeArb(address asset, uint256 amount, address[] calldata path, bool sushiFirst, uint256 expectedProfit) external",
+            "function executeTriangularArb(address asset, uint256 amount, address[] calldata path, uint256 expectedProfit) external"
+        ]);
         for (const opp of opportunities) {
-            // Create transaction for this opportunity
+            // Encode actual contract call data
+            const isTriangular = opp.dexPath && opp.dexPath.length >= 4 &&
+                opp.dexPath[0] === opp.dexPath[opp.dexPath.length - 1];
+            let callData;
+            if (isTriangular) {
+                callData = botInterface.encodeFunctionData("executeTriangularArb", [
+                    opp.tokenA,
+                    BigInt(opp.amountIn),
+                    opp.dexPath,
+                    BigInt(opp.expectedProfit)
+                ]);
+            }
+            else {
+                // Determine sushiFirst from the DEX path ordering
+                const sushiFirst = opp.dexPath?.[0]?.toLowerCase().includes('sushi') ?? false;
+                callData = botInterface.encodeFunctionData("executeArb", [
+                    opp.tokenA,
+                    BigInt(opp.amountIn),
+                    opp.dexPath.length > 0 ? opp.dexPath : [opp.tokenA, opp.tokenB],
+                    sushiFirst,
+                    BigInt(opp.expectedProfit)
+                ]);
+            }
+            const nonce = await this.provider.getTransactionCount(this.wallet.address);
             const tx = {
                 signer: this.wallet,
                 transaction: {
-                    to: "0x" + "0".repeat(40), // Placeholder - would be actual contract address
-                    data: "0x", // Placeholder - would be actual call data
+                    to: contractAddress,
+                    data: callData,
                     gasLimit: BigInt(opp.gasEstimate),
                     maxFeePerGas: gasStrategy.maxFeePerGas,
                     maxPriorityFeePerGas: gasStrategy.maxPriorityFeePerGas,
                     type: 2,
-                    chainId: opp.chainId
+                    chainId: opp.chainId,
+                    nonce: nonce + transactions.length
                 }
             };
             transactions.push(tx);
         }
         return transactions;
     }
+    // Track the last set of opportunities for profit calculation
+    lastBundleOpportunities = [];
+    // Store opportunities during bundle creation for metrics
+    setOpportunitiesForMetrics(opportunities) {
+        this.lastBundleOpportunities = opportunities;
+    }
     async calculateBundleMetrics(bundle) {
         let totalGasCost = 0n;
-        let expectedProfit = (0, ethers_1.parseUnits)("0.1", 18); // Placeholder
         for (const tx of bundle) {
             const gasLimit = BigInt(tx.transaction.gasLimit || 500000);
-            const gasPrice = BigInt(tx.transaction.maxFeePerGas || (0, ethers_1.parseUnits)("50", "gwei"));
+            const gasPrice = BigInt(tx.transaction.maxFeePerGas || (0, ethers_1.parseUnits)("0.1", "gwei"));
             totalGasCost += gasLimit * gasPrice;
+        }
+        // Calculate expected profit from the actual opportunities in this bundle
+        let expectedProfit = 0n;
+        for (const opp of this.lastBundleOpportunities) {
+            expectedProfit += BigInt(opp.netProfit || opp.expectedProfit || 0);
+        }
+        // If no tracked opportunities, try to estimate from bundle size
+        if (expectedProfit === 0n && bundle.length > 0) {
+            // Conservative minimum: each tx should earn at least 2x gas cost
+            expectedProfit = totalGasCost * 2n;
         }
         // Calculate bundle score (0-100)
         const profitMargin = expectedProfit > totalGasCost
@@ -258,13 +330,15 @@ class MEVBundleOptimizer {
             : 0;
         const bundleScore = Math.min(100, Math.max(0, profitMargin));
         // Estimate success rate based on gas pricing and competition
-        let successRate = 70; // Base rate
+        let successRate = 70; // Base rate for L2 direct submission (no relay competition)
         if (bundle.length > 3)
-            successRate -= 10; // Complexity penalty
+            successRate -= 10;
         if (profitMargin < 20)
-            successRate -= 20; // Low margin penalty
+            successRate -= 20;
         if (profitMargin > 50)
-            successRate += 15; // High margin bonus
+            successRate += 15;
+        // L2 bonus: sequencer inclusion is more predictable than mainnet Flashbots
+        successRate += 10;
         return {
             expectedProfit,
             totalGasCost,
@@ -302,8 +376,15 @@ class MEVBundleOptimizer {
         return competitor.strategy === 'arbitrage' && bundle.length <= 3;
     }
     calculateSimulationProfit(results) {
-        // Placeholder - would calculate actual profit from simulation results
-        return (0, ethers_1.parseUnits)("0.05", 18); // 0.05 ETH
+        if (!results || results.length === 0)
+            return 0n;
+        let totalProfit = 0n;
+        for (const result of results) {
+            if (result && result.value) {
+                totalProfit += BigInt(result.value);
+            }
+        }
+        return totalProfit > 0n ? totalProfit : 0n;
     }
     async prepareForPublicMempool(bundle) {
         // Adjust transactions for public mempool execution

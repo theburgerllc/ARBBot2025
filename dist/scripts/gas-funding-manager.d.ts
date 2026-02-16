@@ -13,6 +13,7 @@ export declare class GasFundingManager {
     private contract;
     private config;
     private isRunning;
+    private crossChainManager?;
     constructor();
     initialize(contractAddress: string): Promise<void>;
     setupGasFunding(): Promise<void>;
@@ -23,5 +24,7 @@ export declare class GasFundingManager {
     emergencyDisableGasFunding(): Promise<void>;
     adjustFundingPercentage(newPercentage: number): Promise<void>;
     stopMonitoring(): void;
+    getCrossChainStatus(): Promise<void>;
+    emergencyCrossChainFunding(): Promise<void>;
 }
 export default GasFundingManager;

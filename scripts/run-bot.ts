@@ -171,20 +171,33 @@ class EnhancedMEVBot {
   private optSushiRouter!: ethers.Contract;
   private optUniV3Quoter!: ethers.Contract;
   
-  // Token addresses - Arbitrum
+  // Token addresses - Arbitrum (native USDC, not bridged)
   private readonly TOKENS_ARB = {
     WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-    USDC: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
+    USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",  // Native USDC (Circle)
+    USDC_BRIDGED: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",  // Bridged USDC.e (for depeg arb)
     USDT: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
-    WBTC: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f"
+    WBTC: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+    ARB: "0x912CE59144191C1204E64559FE8253a0e49E6548",
+    DAI: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
+    wstETH: "0x5979D7b546E38E414F7E9822514be443A4800529",  // LST
+    rETH: "0xEC70Dcb4A1EFa46b8F2D97C310C9c4790ba5ffA8",    // LST
+    GMX: "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a",
+    PENDLE: "0x0c880f6761F1af8d9Aa9C466984b80DAb9a8c9e8"
   };
-  
-  // Token addresses - Optimism
+
+  // Token addresses - Optimism (native USDC, not bridged)
   private readonly TOKENS_OPT = {
     WETH: "0x4200000000000000000000000000000000000006",
-    USDC: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
+    USDC: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",  // Native USDC (Circle)
+    USDC_BRIDGED: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",  // Bridged USDC.e (for depeg arb)
     USDT: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
-    WBTC: "0x68f180fcCe6836688e9084f035309E29Bf0A2095"
+    WBTC: "0x68f180fcCe6836688e9084f035309E29Bf0A2095",
+    OP: "0x4200000000000000000000000000000000000042",
+    DAI: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
+    wstETH: "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",  // LST
+    rETH: "0x9Bcef72be871e61ED4fBbc7630889beE758eb81D",    // LST
+    SNX: "0x8700dAec35aF8Ff88c16BdF0418774CB3D7599B4"
   };
   
   // Router addresses
@@ -206,27 +219,92 @@ class EnhancedMEVBot {
     OPTIMISM: "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
   };
   
-  // Trading pairs configuration
+  // Trading pairs configuration - expanded for competitive edge
   private readonly TRADING_PAIRS: TokenPair[] = [
+    // Core high-liquidity pairs
+    {
+      tokenA: this.TOKENS_ARB.WETH,
+      tokenB: this.TOKENS_ARB.USDC,
+      symbolA: "WETH", symbolB: "USDC",
+      decimalsA: 18, decimalsB: 6,
+      minAmount: parseEther("0.1").toString(),
+      maxAmount: parseEther("10").toString()
+    },
     {
       tokenA: this.TOKENS_ARB.WETH,
       tokenB: this.TOKENS_ARB.USDT,
-      symbolA: "WETH",
-      symbolB: "USDT",
-      decimalsA: 18,
-      decimalsB: 6,
+      symbolA: "WETH", symbolB: "USDT",
+      decimalsA: 18, decimalsB: 6,
       minAmount: parseEther("0.1").toString(),
       maxAmount: parseEther("10").toString()
     },
     {
       tokenA: this.TOKENS_ARB.WBTC,
       tokenB: this.TOKENS_ARB.WETH,
-      symbolA: "WBTC",
-      symbolB: "WETH",
-      decimalsA: 8,
-      decimalsB: 18,
+      symbolA: "WBTC", symbolB: "WETH",
+      decimalsA: 8, decimalsB: 18,
       minAmount: parseUnits("0.01", 8).toString(),
       maxAmount: parseUnits("1", 8).toString()
+    },
+    // Stablecoin depeg arbitrage: native USDC vs bridged USDC.e
+    {
+      tokenA: this.TOKENS_ARB.USDC,
+      tokenB: this.TOKENS_ARB.USDC_BRIDGED,
+      symbolA: "USDC", symbolB: "USDC.e",
+      decimalsA: 6, decimalsB: 6,
+      minAmount: parseUnits("100", 6).toString(),
+      maxAmount: parseUnits("100000", 6).toString()
+    },
+    {
+      tokenA: this.TOKENS_ARB.USDC,
+      tokenB: this.TOKENS_ARB.USDT,
+      symbolA: "USDC", symbolB: "USDT",
+      decimalsA: 6, decimalsB: 6,
+      minAmount: parseUnits("100", 6).toString(),
+      maxAmount: parseUnits("100000", 6).toString()
+    },
+    // LST/ETH spread arbitrage
+    {
+      tokenA: this.TOKENS_ARB.wstETH,
+      tokenB: this.TOKENS_ARB.WETH,
+      symbolA: "wstETH", symbolB: "WETH",
+      decimalsA: 18, decimalsB: 18,
+      minAmount: parseEther("0.5").toString(),
+      maxAmount: parseEther("20").toString()
+    },
+    {
+      tokenA: this.TOKENS_ARB.rETH,
+      tokenB: this.TOKENS_ARB.WETH,
+      symbolA: "rETH", symbolB: "WETH",
+      decimalsA: 18, decimalsB: 18,
+      minAmount: parseEther("0.5").toString(),
+      maxAmount: parseEther("20").toString()
+    },
+    // Native token pairs
+    {
+      tokenA: this.TOKENS_ARB.ARB,
+      tokenB: this.TOKENS_ARB.WETH,
+      symbolA: "ARB", symbolB: "WETH",
+      decimalsA: 18, decimalsB: 18,
+      minAmount: parseEther("100").toString(),
+      maxAmount: parseEther("50000").toString()
+    },
+    // DeFi tokens with high volatility
+    {
+      tokenA: this.TOKENS_ARB.GMX,
+      tokenB: this.TOKENS_ARB.WETH,
+      symbolA: "GMX", symbolB: "WETH",
+      decimalsA: 18, decimalsB: 18,
+      minAmount: parseEther("1").toString(),
+      maxAmount: parseEther("100").toString()
+    },
+    {
+      tokenA: this.TOKENS_ARB.PENDLE,
+      tokenB: this.TOKENS_ARB.WETH,
+      symbolA: "PENDLE", symbolB: "WETH",
+      decimalsA: 18, decimalsB: 18,
+      minAmount: parseEther("10").toString(),
+      maxAmount: parseEther("5000").toString()
     }
   ];
   
@@ -313,11 +391,42 @@ class EnhancedMEVBot {
     });
   }
   
+  // Bot contract ABI - matches FlashArbBotBalancer.sol
+  private static readonly BOT_CONTRACT_ABI = [
+    "function executeArb(address asset, uint256 amount, address[] calldata path, bool sushiFirst, uint256 expectedProfit) external",
+    "function executeTriangularArb(address asset, uint256 amount, address[] calldata path, uint256 expectedProfit) external",
+    "function executeBatchArbitrage((( address asset, uint96 amount, address tokenA, address tokenB, bool sushiFirst, uint32 slippageBps, uint32 minProfitBps)[] trades, uint256 deadline) params) external",
+    "function simulateArbitrage(address asset, uint256 amount, address[] calldata path, bool sushiFirst) external view returns (uint256 profit)",
+    "function simulateTriangularArbitrage(address asset, uint256 amount, address[] calldata path) external view returns (uint256 profit)",
+    "function getOptimalProvider(address asset, uint256 amount) external view returns (uint8 provider, uint256 fee)",
+    "function setAuthorizedCaller(address caller, bool authorized) external",
+    "function setSlippageTolerance(uint256 _slippage) external",
+    "function setMinProfitBps(uint256 _minProfit) external",
+    "function setPriceFeed(address token, address feed) external",
+    "function setProfitWallet(address _profitWallet) external",
+    "function setGasFundingWallet(address _gasFundingWallet) external",
+    "function setGasFundingPercentage(uint256 _percentage) external",
+    "function withdraw(address token) external",
+    "function emergencyWithdraw(address token) external",
+    "function pause() external",
+    "function unpause() external",
+    "function owner() external view returns (address)",
+    "function paused() external view returns (bool)",
+    "function slippageTolerance() external view returns (uint256)",
+    "function minProfitBps() external view returns (uint256)",
+    "function getGasFundingStats() external view returns (address wallet, uint256 percentage, uint256 totalTransferred)",
+    "event ArbitrageExecuted(address indexed asset, uint256 amount, uint256 profit, bool sushiFirst)",
+    "event TriangularArbitrageExecuted(address indexed tokenA, address indexed tokenB, address indexed tokenC, uint256 amount, uint256 profit)",
+    "event BatchArbitrageExecuted(uint256 tradesCount, uint256 totalProfit)",
+    "event FlashLoanProviderSelected(uint8 provider, address asset, uint256 amount)",
+    "event ProfitWithdrawn(address indexed token, uint256 amount)"
+  ];
+
   private initializeContracts(): void {
     // Arbitrum contracts
     this.arbBotContract = new ethers.Contract(
       process.env.BOT_CONTRACT_ADDRESS!,
-      [], // ABI would be loaded from compilation
+      EnhancedMEVBot.BOT_CONTRACT_ABI,
       this.executorSigner
     );
     
@@ -360,7 +469,7 @@ class EnhancedMEVBot {
     if (this.crossChainEnabled && process.env.OPT_BOT_CONTRACT_ADDRESS) {
       this.optBotContract = new ethers.Contract(
         process.env.OPT_BOT_CONTRACT_ADDRESS,
-        [],
+        EnhancedMEVBot.BOT_CONTRACT_ABI,
         this.optimismExecutor
       );
       
@@ -591,26 +700,38 @@ class EnhancedMEVBot {
   
   async initialize(): Promise<void> {
     try {
-      // Initialize Flashbots provider
-      this.flashbotsProvider = await FlashbotsBundleProvider.create(
-        this.arbitrumProvider,
-        this.authSigner,
-        process.env.FLASHBOTS_RELAY_URL || "https://relay.flashbots.net",
-        "mainnet"
-      );
-      
-      // Initialize MEV-Share client (use mainnet for MEV-Share)
+      // L2 networks (Arbitrum/Optimism) don't use Flashbots relay directly.
+      // Transactions are submitted directly to the L2 sequencer.
+      // Initialize Flashbots provider only for simulation purposes on mainnet fork.
       try {
-        const mainnetProvider = new JsonRpcProvider(process.env.MAINNET_RPC || "https://eth-mainnet.g.alchemy.com/v2/demo");
-        const mainnetSigner = new Wallet(process.env.FLASHBOTS_AUTH_KEY!, mainnetProvider);
-        const mainnetNetwork = await mainnetProvider.getNetwork();
-        this.mevShareClient = MevShareClient.fromNetwork(
-          mainnetSigner,
-          mainnetNetwork
-        );
+        if (process.env.MAINNET_RPC && process.env.FLASHBOTS_AUTH_KEY) {
+          const mainnetProvider = new JsonRpcProvider(process.env.MAINNET_RPC);
+          const fbAuthSigner = new Wallet(process.env.FLASHBOTS_AUTH_KEY, mainnetProvider);
+          this.flashbotsProvider = await FlashbotsBundleProvider.create(
+            mainnetProvider,
+            fbAuthSigner,
+            process.env.FLASHBOTS_RELAY_URL || "https://relay.flashbots.net",
+            "mainnet"
+          );
+          logger.info(chalk.cyan("Flashbots provider initialized for mainnet simulation only"));
+        }
+      } catch (error) {
+        logger.warn("Flashbots provider initialization skipped (not needed for L2 direct submission)", error);
+      }
+
+      // MEV-Share client (optional, for mainnet MEV protection)
+      try {
+        if (process.env.MAINNET_RPC && process.env.FLASHBOTS_AUTH_KEY) {
+          const mainnetProvider = new JsonRpcProvider(process.env.MAINNET_RPC);
+          const mainnetSigner = new Wallet(process.env.FLASHBOTS_AUTH_KEY, mainnetProvider);
+          const mainnetNetwork = await mainnetProvider.getNetwork();
+          this.mevShareClient = MevShareClient.fromNetwork(mainnetSigner, mainnetNetwork);
+        }
       } catch (error) {
         logger.warn("MEV-Share client initialization failed, continuing without MEV-Share", error);
       }
+
+      logger.info(chalk.green("L2 direct submission mode active (Arbitrum/Optimism sequencers)"));
       
       // Verify balances
       const arbBalance = await this.arbitrumProvider.getBalance(this.executorSigner.address);
@@ -942,49 +1063,126 @@ class EnhancedMEVBot {
     logger.info(chalk.cyan("────────────────────────────────────────\n"));
   }
 
-  // Enhanced arbitrage scanning with volatile tokens and multi-DEX support
+  // Enhanced arbitrage scanning with parallel quotes and multi-DEX support
   async scanForArbitrageOpportunities(): Promise<ArbitrageOpportunity[]> {
     const opportunities: ArbitrageOpportunity[] = [];
-    
+    const scanStart = Date.now();
+
     try {
+      // OPTIMIZATION: Parallel scanning of both chains simultaneously
+      const scanPromises: Promise<void>[] = [];
+
       // Scan Arbitrum opportunities
-      const arbPathfinder = new EnhancedArbitragePathfinder(new Map([[42161, this.arbitrumProvider]]));
-      const arbOpportunities = await arbPathfinder.findArbitrageOpportunities(42161, 4, 0.005);
-      
-      for (const opportunity of arbOpportunities) {
-        const arbOpp = this.convertToLegacyFormat(opportunity, 42161);
-        if (arbOpp) opportunities.push(arbOpp);
-      }
-      
-      // Scan Optimism opportunities if cross-chain enabled
-      if (this.crossChainEnabled) {
-        const optPathfinder = new EnhancedArbitragePathfinder(new Map([[10, this.optimismProvider]]));
-        const optOpportunities = await optPathfinder.findArbitrageOpportunities(10, 4, 0.005);
-        
-        for (const opportunity of optOpportunities) {
-          const optOpp = this.convertToLegacyFormat(opportunity, 10);
-          if (optOpp) opportunities.push(optOpp);
+      scanPromises.push((async () => {
+        const arbPathfinder = new EnhancedArbitragePathfinder(new Map([[42161, this.arbitrumProvider]]));
+        const arbOpportunities = await arbPathfinder.findArbitrageOpportunities(42161, 4, 0.003);
+
+        for (const opportunity of arbOpportunities) {
+          const arbOpp = this.convertToLegacyFormat(opportunity, 42161);
+          if (arbOpp) opportunities.push(arbOpp);
         }
+      })());
+
+      // Scan Optimism opportunities in parallel if cross-chain enabled
+      if (this.crossChainEnabled) {
+        scanPromises.push((async () => {
+          const optPathfinder = new EnhancedArbitragePathfinder(new Map([[10, this.optimismProvider]]));
+          const optOpportunities = await optPathfinder.findArbitrageOpportunities(10, 4, 0.003);
+
+          for (const opportunity of optOpportunities) {
+            const optOpp = this.convertToLegacyFormat(opportunity, 10);
+            if (optOpp) opportunities.push(optOpp);
+          }
+        })());
       }
-      
+
+      // OPTIMIZATION: Also run direct price queries in parallel for high-priority pairs
+      scanPromises.push(this.scanDirectPriceOpportunities(opportunities));
+
+      // Wait for all scans to complete simultaneously
+      await Promise.allSettled(scanPromises);
+
+      // Sort by priority (highest profit potential first)
+      opportunities.sort((a, b) => {
+        const profitA = BigInt(a.netProfit || 0);
+        const profitB = BigInt(b.netProfit || 0);
+        return profitB > profitA ? 1 : profitB < profitA ? -1 : 0;
+      });
+
+      const scanDuration = Date.now() - scanStart;
       if (this.verboseMode && opportunities.length > 0) {
-        logger.info(chalk.green(`🎯 Enhanced pathfinding found ${opportunities.length} opportunities`));
-        
-        // Log DEX coverage statistics
+        logger.info(chalk.green(`🎯 Enhanced pathfinding found ${opportunities.length} opportunities in ${scanDuration}ms`));
+
         const arbStats = EnhancedDEXManager.getCoverageStats(42161);
         const optStats = this.crossChainEnabled ? EnhancedDEXManager.getCoverageStats(10) : null;
-        
+
         logger.info(chalk.cyan(`📊 Arbitrum: ${arbStats.totalRouters} DEXes, avg liquidity: ${arbStats.averageLiquidityScore.toFixed(1)}`));
         if (optStats) {
           logger.info(chalk.cyan(`📊 Optimism: ${optStats.totalRouters} DEXes, avg liquidity: ${optStats.averageLiquidityScore.toFixed(1)}`));
         }
       }
-      
+
     } catch (error) {
       logger.error(chalk.red("Error in enhanced arbitrage scanning:"), error);
     }
-    
-    return opportunities.slice(0, 20); // Limit for performance
+
+    return opportunities.slice(0, 20);
+  }
+
+  // Direct price comparison on high-priority pairs for fastest detection
+  private async scanDirectPriceOpportunities(opportunities: ArbitrageOpportunity[]): Promise<void> {
+    try {
+      const quotePromises = this.TRADING_PAIRS.map(async (pair) => {
+        try {
+          const amountIn = BigInt(pair.minAmount);
+          const sushiFirst = await this.determineSushiFirst(pair.tokenA, pair.tokenB, amountIn, 42161);
+
+          // Get quotes from both DEXes in parallel
+          const [uniQuote, sushiQuote] = await Promise.all([
+            this.arbUniV2Router.getAmountsOut(amountIn, [pair.tokenA, pair.tokenB]).catch(() => null),
+            this.arbSushiRouter.getAmountsOut(amountIn, [pair.tokenA, pair.tokenB]).catch(() => null)
+          ]);
+
+          if (!uniQuote || !sushiQuote) return;
+
+          const uniOut = uniQuote[uniQuote.length - 1];
+          const sushiOut = sushiQuote[sushiQuote.length - 1];
+
+          // Check for spread between the two DEXes
+          const spread = Math.abs(Number(uniOut - sushiOut)) / Number(uniOut > sushiOut ? uniOut : sushiOut);
+
+          if (spread > 0.003) { // 0.3% minimum spread
+            const profit = uniOut > sushiOut ? uniOut - sushiOut : sushiOut - uniOut;
+            opportunities.push({
+              id: `direct-${pair.symbolA}-${pair.symbolB}-${Date.now()}`,
+              tokenA: pair.tokenA,
+              tokenB: pair.tokenB,
+              amountIn: amountIn.toString(),
+              expectedProfit: profit.toString(),
+              netProfit: profit.toString(),
+              sushiFirst: sushiOut < uniOut, // Buy on cheaper DEX
+              path: [pair.tokenA, pair.tokenB],
+              gasEstimate: "500000",
+              gasCost: formatEther(500000n * parseUnits("0.1", "gwei")),
+              timestamp: Date.now(),
+              isTriangular: false,
+              chainId: 42161,
+              priority: 8,
+              spread,
+              slippage: 0.01,
+              flashLoanProvider: 'BALANCER',
+              flashLoanFee: "0"
+            });
+          }
+        } catch {
+          // Skip pair on error
+        }
+      });
+
+      await Promise.allSettled(quotePromises);
+    } catch (error) {
+      logger.error(chalk.red("Error in direct price scanning:"), error);
+    }
   }
   async scanCrossChainOpportunities(): Promise<CrossChainOpportunity[]> {
     if (!this.crossChainEnabled) return [];
@@ -1094,7 +1292,57 @@ class EnhancedMEVBot {
       return null;
     }
   }
-  private async submitMEVBundle(bundle: MEVBundle): Promise<boolean> { return false; }
+  private async submitMEVBundle(bundle: MEVBundle): Promise<boolean> {
+    try {
+      // L2 networks (Arbitrum/Optimism) use sequencers, not Flashbots relay.
+      // Submit transactions directly to the sequencer for inclusion.
+      for (const bundleTx of bundle.transactions) {
+        const signer = bundleTx.signer as ethers.Wallet;
+        const tx = bundleTx.transaction;
+
+        // Ensure required fields are populated
+        if (!tx.to || tx.to === ethers.ZeroAddress) {
+          logger.error(chalk.red("Invalid transaction target address"));
+          return false;
+        }
+
+        // Sign and send the transaction directly to the L2 sequencer
+        const signedTx = await signer.sendTransaction({
+          to: tx.to,
+          data: tx.data,
+          value: tx.value || 0n,
+          gasLimit: tx.gasLimit || this.GAS_LIMIT,
+          maxFeePerGas: tx.maxFeePerGas,
+          maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+          nonce: tx.nonce,
+          chainId: tx.chainId,
+          type: 2
+        });
+
+        logger.info(chalk.cyan(`📤 Transaction submitted: ${signedTx.hash}`));
+
+        // Wait for confirmation with timeout
+        const receipt = await Promise.race([
+          signedTx.wait(1),
+          new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("Transaction confirmation timeout")), this.BUNDLE_TIMEOUT)
+          )
+        ]);
+
+        if (!receipt || receipt.status !== 1) {
+          logger.error(chalk.red(`❌ Transaction reverted: ${signedTx.hash}`));
+          return false;
+        }
+
+        logger.info(chalk.green(`✅ Transaction confirmed in block ${receipt.blockNumber}, gas used: ${receipt.gasUsed}`));
+      }
+
+      return true;
+    } catch (error) {
+      logger.error(chalk.red("❌ Failed to submit L2 transaction"), error);
+      return false;
+    }
+  }
   
   private async estimateGasSettings(chainId: number, urgency: 'low' | 'medium' | 'high' = 'high'): Promise<GasSettings> {
     try {
@@ -1121,8 +1369,49 @@ class EnhancedMEVBot {
       return await DynamicGasPricer.calculateOptimalGas(provider, chainId, urgency);
     }
   }
+  private async determineSushiFirst(
+    tokenA: string,
+    tokenB: string,
+    amountIn: bigint,
+    chainId: number
+  ): Promise<boolean> {
+    try {
+      const uniRouter = chainId === 42161 ? this.arbUniV2Router : this.optUniV2Router;
+      const sushiRouter = chainId === 42161 ? this.arbSushiRouter : this.optSushiRouter;
+
+      // Query both DEXes for actual prices
+      const [uniAmounts, sushiAmounts] = await Promise.all([
+        uniRouter.getAmountsOut(amountIn, [tokenA, tokenB]).catch(() => null),
+        sushiRouter.getAmountsOut(amountIn, [tokenA, tokenB]).catch(() => null)
+      ]);
+
+      if (!uniAmounts && !sushiAmounts) return false;
+      if (!uniAmounts) return true; // Only Sushi has liquidity
+      if (!sushiAmounts) return false; // Only Uni has liquidity
+
+      const uniOut = uniAmounts[uniAmounts.length - 1];
+      const sushiOut = sushiAmounts[sushiAmounts.length - 1];
+
+      // Buy on the cheaper DEX first (lower output = cheaper), sell on the more expensive one
+      // sushiFirst=true means: buy on Sushi, sell on Uni
+      // If Sushi gives less output (cheaper price), buy there first
+      return sushiOut < uniOut;
+    } catch (error) {
+      logger.warn(chalk.yellow("Could not determine optimal DEX order, defaulting to Uni first"));
+      return false;
+    }
+  }
+
   private convertToLegacyFormat(opportunity: any, chainId: number): ArbitrageOpportunity | null {
     try {
+      // Determine optimal DEX ordering based on the best path's router sequence
+      // If the best path starts with SushiSwap, sushiFirst = true
+      let sushiFirst = false;
+      if (opportunity.bestPath.routers && opportunity.bestPath.routers.length > 0) {
+        const firstRouter = opportunity.bestPath.routers[0];
+        sushiFirst = firstRouter.name?.toLowerCase().includes('sushi') ?? false;
+      }
+
       return {
         id: opportunity.id,
         tokenA: opportunity.tokenPair.tokenA.address,
@@ -1130,7 +1419,7 @@ class EnhancedMEVBot {
         amountIn: opportunity.amountIn.toString(),
         expectedProfit: opportunity.expectedAmountOut.toString(),
         netProfit: opportunity.netProfit.toString(),
-        sushiFirst: Math.random() > 0.5,
+        sushiFirst,
         path: opportunity.bestPath.path,
         gasEstimate: opportunity.bestPath.totalGasCost.toString(),
         gasCost: formatEther(opportunity.bestPath.totalGasCost * BigInt(50000000)), // 0.05 gwei
@@ -1148,7 +1437,46 @@ class EnhancedMEVBot {
     }
   }
   
-  private async checkCircuitBreaker(): Promise<void> {}
+  private async checkCircuitBreaker(): Promise<void> {
+    try {
+      // Check the advanced risk manager's circuit breaker status
+      const cbStatus = this.advancedRiskManager.getCircuitBreakerStatus();
+
+      if (cbStatus.isActive) {
+        if (!this.circuitBreakerTripped) {
+          this.circuitBreakerTripped = true;
+          logger.error(chalk.red("🚨 CIRCUIT BREAKER TRIPPED"), {
+            reasons: cbStatus.reasons,
+            estimatedRecovery: cbStatus.estimatedRecoveryTime
+              ? new Date(cbStatus.estimatedRecoveryTime).toISOString()
+              : "unknown"
+          });
+        }
+        return;
+      }
+
+      // Manual loss-based circuit breaker: if total loss exceeds 5% of starting capital
+      const netPnL = this.totalProfit - this.totalLoss;
+      const startingCapital = parseEther("10"); // matches constructor initialization
+      if (netPnL < 0n && (-netPnL * 100n) / startingCapital > 5n) {
+        this.circuitBreakerTripped = true;
+        logger.error(chalk.red("🚨 CIRCUIT BREAKER TRIPPED - Max drawdown exceeded"), {
+          totalProfit: formatEther(this.totalProfit),
+          totalLoss: formatEther(this.totalLoss),
+          netPnL: formatEther(netPnL)
+        });
+        return;
+      }
+
+      // If circuit breaker was previously tripped but conditions improved, reset it
+      if (this.circuitBreakerTripped && !cbStatus.isActive) {
+        this.circuitBreakerTripped = false;
+        logger.info(chalk.green("✅ Circuit breaker reset - trading resumed"));
+      }
+    } catch (error) {
+      logger.error(chalk.red("Error checking circuit breaker"), error);
+    }
+  }
   async monitorAndExecute(): Promise<void> {
     if (this.isRunning) return;
     
@@ -1263,25 +1591,63 @@ class EnhancedMEVBot {
     }
   }
   
+  private scanInterval: ReturnType<typeof setInterval> | null = null;
+  private liquidityInterval: ReturnType<typeof setInterval> | null = null;
+
   async start(): Promise<void> {
     logger.info(chalk.green("🤖 Starting Enhanced MEV Arbitrage Bot..."));
-    
+
     if (this.verboseMode) {
-      // Log enhanced features
       const arbStats = EnhancedDEXManager.getCoverageStats(42161);
       const volatilePairs = VolatileTokenTracker.getHighVolatilityPairs(42161).length;
-      
+
       logger.info(chalk.cyan(`🔥 Volatile pairs: ${volatilePairs}`));
       logger.info(chalk.cyan(`🏪 DEX coverage: ${Object.keys(arbStats.routerTypes).join(', ')}`));
       logger.info(chalk.cyan(`🧠 Pathfinding: Enhanced Bellman-Ford + Line Graph`));
     }
-    
-    logger.info(chalk.green("✅ Enhanced MEV bot started successfully"));
+
+    // Run first scan immediately
+    await this.monitorAndExecute();
+
+    // Start continuous scanning loop at configured interval
+    this.scanInterval = setInterval(async () => {
+      try {
+        if (!this.circuitBreakerTripped) {
+          await this.monitorAndExecute();
+        } else {
+          logger.warn(chalk.yellow("🚨 Scanning paused - circuit breaker active"));
+          await this.checkCircuitBreaker();
+        }
+      } catch (error) {
+        logger.error(chalk.red("Error in scan loop"), error);
+      }
+    }, this.PRICE_UPDATE_INTERVAL);
+
+    // Periodic liquidity health monitoring (every 60 seconds)
+    this.liquidityInterval = setInterval(async () => {
+      try {
+        await this.monitorLiquidityHealth();
+      } catch (error) {
+        logger.error(chalk.red("Error in liquidity monitoring"), error);
+      }
+    }, 60000);
+
+    logger.info(chalk.green(`✅ Enhanced MEV bot started - scanning every ${this.PRICE_UPDATE_INTERVAL}ms`));
   }
   
   async stop(): Promise<void> {
     logger.info(chalk.yellow("🛑 Stopping Enhanced MEV Bot..."));
-    
+
+    // Clear scanning intervals
+    if (this.scanInterval) {
+      clearInterval(this.scanInterval);
+      this.scanInterval = null;
+    }
+    if (this.liquidityInterval) {
+      clearInterval(this.liquidityInterval);
+      this.liquidityInterval = null;
+    }
+
     // Stop Market Optimization Protocol
     try {
       await this.optimizationCoordinator?.stop();
@@ -1378,30 +1744,35 @@ class EnhancedMEVBot {
   }> {
     try {
       if (this.simulationMode) {
-        // Simulate the trade execution
         logger.info(chalk.blue(`🎯 SIMULATION: Would execute trade with optimized parameters`));
         return {
           success: true,
           profit: BigInt(opportunity.netProfit || 0),
-          gasCost: BigInt(opportunity.estimatedGasCost || 0)
+          gasCost: BigInt(opportunity.estimatedGasCost || opportunity.gasCost || 0)
         };
       }
-      
-      // Real execution logic would integrate with existing MEV bundle execution
-      logger.warn(chalk.yellow('⚠️ Real execution not yet implemented - using simulation'));
+
+      // Real execution: create MEV bundle and submit via direct L2 submission
+      const legacyOpp: ArbitrageOpportunity = typeof opportunity.id === 'string' && opportunity.tokenA
+        ? opportunity
+        : this.convertToLegacyFormat(opportunity, opportunity.chainId || 42161)!;
+
+      if (!legacyOpp) {
+        logger.error(chalk.red("Failed to convert opportunity to executable format"));
+        return { success: false, profit: 0n, gasCost: 0n };
+      }
+
+      // Execute the arbitrage through the standard path
+      const success = await this.executeArbitrage(legacyOpp);
+
       return {
-        success: false,
-        profit: 0n,
-        gasCost: 0n
+        success,
+        profit: success ? BigInt(legacyOpp.netProfit) : 0n,
+        gasCost: BigInt(legacyOpp.gasCost || 0)
       };
-      
     } catch (error) {
       logger.error('Error executing optimized trade:', error);
-      return {
-        success: false,
-        profit: 0n,
-        gasCost: 0n
-      };
+      return { success: false, profit: 0n, gasCost: 0n };
     }
   }
 

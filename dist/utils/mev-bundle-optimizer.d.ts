@@ -69,6 +69,8 @@ export declare class MEVBundleOptimizer {
     private selectComplementaryOpportunities;
     private optimizeBundleGasPricing;
     private createBundleTransactions;
+    private lastBundleOpportunities;
+    setOpportunitiesForMetrics(opportunities: ArbitrageOpportunity[]): void;
     private calculateBundleMetrics;
     private generateOptimizationRecommendations;
     private generateBundleKey;

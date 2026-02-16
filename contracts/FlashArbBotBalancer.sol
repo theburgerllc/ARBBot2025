@@ -111,9 +111,10 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     IUniswapV2Router02 public uniV2RouterNew;
     IUniswapV2Router02 public sushiRouterNew;
     
-    // Token addresses - Arbitrum
+    // Token addresses - Arbitrum (native USDC, not bridged)
     address public constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    address public constant USDC = 0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8;
+    address public constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // Native USDC (Circle)
+    address public constant USDC_BRIDGED = 0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8; // USDC.e for depeg arb
     address public constant USDT = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
     address public constant WBTC = 0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f;
     
@@ -338,19 +339,49 @@ contract FlashArbBotBalancer is Ownable, ReentrancyGuard, Pausable, IFlashLoanSi
     }
     
     // GAS OPTIMIZATION: Internal function for single arbitrage
-    function _executeSingleArbitrage(ArbitrageParams memory params) 
+    function _executeSingleArbitrage(ArbitrageParams memory params)
         internal returns (uint256 profit) {
-        // Optimized execution logic with minimal external calls
-        // Uses assembly for critical calculations
-        // Implements gas-efficient token swaps
-        
         uint256 initialBalance = IERC20(params.asset).balanceOf(address(this));
-        
-        // Execute the arbitrage logic here...
-        // This is a placeholder for the actual implementation
-        
+        uint256 amount = uint256(params.amount);
+
+        // Build swap path
+        address[] memory path = new address[](2);
+        path[0] = params.tokenA;
+        path[1] = params.tokenB;
+
+        // Apply slippage tolerance from params (or use contract default)
+        uint256 slippage = params.slippageBps > 0 ? uint256(params.slippageBps) : slippageTolerance;
+
+        // Approve routers
+        IERC20(params.asset).approve(address(_getBestRouter(params.sushiFirst)), amount);
+
+        // Step 1: Swap on first router (buy)
+        IUniswapV2Router02 router1 = _getBestRouter(params.sushiFirst);
+        uint256[] memory amounts1 = router1.getAmountsOut(amount, path);
+        uint256 minOut1 = amounts1[amounts1.length - 1] * (10000 - slippage) / 10000;
+        uint256[] memory result1 = router1.swapExactTokensForTokens(
+            amount, minOut1, path, address(this), block.timestamp + 300
+        );
+        uint256 intermediateAmount = result1[result1.length - 1];
+
+        // Step 2: Swap on second router (sell) - reverse path
+        address[] memory reversePath = _reverse(path);
+        IUniswapV2Router02 router2 = _getBestRouter(!params.sushiFirst);
+        IERC20(params.tokenB).approve(address(router2), intermediateAmount);
+        uint256[] memory amounts2 = router2.getAmountsOut(intermediateAmount, reversePath);
+        uint256 minOut2 = amounts2[amounts2.length - 1] * (10000 - slippage) / 10000;
+        router2.swapExactTokensForTokens(
+            intermediateAmount, minOut2, reversePath, address(this), block.timestamp + 300
+        );
+
         uint256 finalBalance = IERC20(params.asset).balanceOf(address(this));
-        profit = finalBalance > initialBalance ? finalBalance - initialBalance : 0;
+        profit = calculateProfitAssembly(initialBalance, finalBalance, 0);
+
+        // Validate minimum profit
+        uint256 minProfitRequired = params.minProfitBps > 0
+            ? (amount * uint256(params.minProfitBps)) / 10000
+            : (amount * minProfitBps) / 10000;
+        require(profit >= minProfitRequired, "Single arb: profit too low");
     }
 
     function executeArb(

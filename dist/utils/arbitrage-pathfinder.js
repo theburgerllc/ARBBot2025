@@ -82,34 +82,92 @@ class EnhancedArbitragePathfinder {
         console.log(`✅ Token graph built: ${this.tokenGraph.size} nodes`);
     }
     /**
-     * Create arbitrage edge with rate calculation
+     * Create arbitrage edge with real on-chain rate query
      */
     async createArbitrageEdge(tokenA, tokenB, router, chainId) {
         try {
             const provider = this.providers.get(chainId);
             if (!provider)
                 return null;
-            // Mock rate calculation (in production, would query actual DEX)
-            const baseRate = this.calculateMockRate(tokenA, tokenB);
             const routerFee = this.parseRouterFee(router.feeStructure);
-            const effectiveRate = baseRate * (1 - routerFee);
-            // Add volatility-based rate adjustment
-            const volatilityAdjustment = 1 + (Math.random() - 0.5) * tokenA.volatility24h * 0.1;
-            const adjustedRate = effectiveRate * volatilityAdjustment;
+            // Query real on-chain rates from DEX routers
+            let rate;
+            try {
+                rate = await this.queryOnChainRate(tokenA, tokenB, router, provider);
+            }
+            catch {
+                // Fallback: estimate rate from known price relationships
+                rate = this.estimateRateFromPriceFeeds(tokenA, tokenB);
+            }
+            if (rate <= 0 || !isFinite(rate))
+                return null;
+            const effectiveRate = rate * (1 - routerFee);
             return {
                 from: tokenA.address,
                 to: tokenB.address,
                 router,
-                rate: adjustedRate,
+                rate: effectiveRate,
                 fee: routerFee,
-                gaseCost: router.gasLimit,
+                gasCost: router.gasLimit,
                 liquidityDepth: this.estimateLiquidityDepth(tokenA, tokenB, router),
-                weight: -Math.log(adjustedRate) // Negative log for Bellman-Ford
+                weight: -Math.log(effectiveRate) // Negative log for Bellman-Ford
             };
         }
         catch (error) {
             return null;
         }
+    }
+    /**
+     * Query actual on-chain exchange rate from a DEX router
+     */
+    async queryOnChainRate(tokenA, tokenB, router, provider) {
+        const iface = dex_routers_1.EnhancedDEXManager.getRouterInterface(router.routerType);
+        if (router.routerType === 'UNISWAP_V2') {
+            const routerContract = new ethers_1.ethers.Contract(router.address, [
+                "function getAmountsOut(uint amountIn, address[] path) view returns (uint[] amounts)"
+            ], provider);
+            // Use a standard input amount based on token decimals
+            const decimalsA = this.getTokenDecimals(tokenA.symbol);
+            const amountIn = ethers_1.ethers.parseUnits("1", decimalsA);
+            const amounts = await routerContract.getAmountsOut(amountIn, [tokenA.address, tokenB.address]);
+            const amountOut = amounts[amounts.length - 1];
+            const decimalsB = this.getTokenDecimals(tokenB.symbol);
+            // Rate = amountOut / amountIn (normalized)
+            return Number(ethers_1.ethers.formatUnits(amountOut, decimalsB)) / Number(ethers_1.ethers.formatUnits(amountIn, decimalsA));
+        }
+        // For other router types, use estimation
+        return this.estimateRateFromPriceFeeds(tokenA, tokenB);
+    }
+    /**
+     * Estimate rate from known price relationships (fallback)
+     */
+    estimateRateFromPriceFeeds(tokenA, tokenB) {
+        const priceA = this.getEstimatedUSDPrice(tokenA.symbol);
+        const priceB = this.getEstimatedUSDPrice(tokenB.symbol);
+        if (priceB === 0)
+            return 0;
+        return priceA / priceB;
+    }
+    getEstimatedUSDPrice(symbol) {
+        // Conservative price estimates - these serve as fallback only
+        const prices = {
+            "ETH": 2500, "WETH": 2500, "WBTC": 60000,
+            "USDC": 1, "USDT": 1, "DAI": 1, "FRAX": 1,
+            "ARB": 0.8, "OP": 1.5, "GMX": 35, "PENDLE": 3,
+            "MAGIC": 0.5, "DPX": 10, "RDNT": 0.06,
+            "wstETH": 2900, "rETH": 2700, "SNX": 2.5,
+            "1INCH": 0.3, "CVX": 2.5, "JONES": 0.3, "UMAMI": 0.5
+        };
+        return prices[symbol] || 1;
+    }
+    getTokenDecimals(symbol) {
+        const sixDecimalTokens = ["USDC", "USDT"];
+        const eightDecimalTokens = ["WBTC"];
+        if (sixDecimalTokens.includes(symbol))
+            return 6;
+        if (eightDecimalTokens.includes(symbol))
+            return 8;
+        return 18;
     }
     /**
      * Find direct arbitrage paths between two DEXes
@@ -271,7 +329,7 @@ class EnhancedArbitragePathfinder {
                     return null;
                 totalRate *= edge.rate;
                 totalFees += edge.fee;
-                totalGasCost += edge.gaseCost;
+                totalGasCost += edge.gasCost;
                 edges.push(edge);
             }
             const profitMargin = totalRate - 1 - totalFees;
@@ -315,7 +373,7 @@ class EnhancedArbitragePathfinder {
             if (current === node && path.length >= 3) {
                 const totalRate = edges.reduce((acc, edge) => acc * edge.rate, 1);
                 const totalFees = edges.reduce((acc, edge) => acc + edge.fee, 0);
-                const totalGasCost = edges.reduce((acc, edge) => acc + edge.gaseCost, 0n);
+                const totalGasCost = edges.reduce((acc, edge) => acc + edge.gasCost, 0n);
                 const profitMargin = totalRate - 1 - totalFees;
                 return {
                     path,
@@ -358,7 +416,7 @@ class EnhancedArbitragePathfinder {
             }
             const totalRate = edges.reduce((acc, edge) => acc * edge.rate, 1);
             const totalFees = edges.reduce((acc, edge) => acc + edge.fee, 0);
-            const totalGasCost = edges.reduce((acc, edge) => acc + edge.gaseCost, 0n);
+            const totalGasCost = edges.reduce((acc, edge) => acc + edge.gasCost, 0n);
             const profitMargin = totalRate - 1 - totalFees;
             return {
                 path,

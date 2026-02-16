@@ -100,6 +100,7 @@ declare class EnhancedMEVBot {
     private initializeConfiguration;
     private setupProviders;
     private setupSigners;
+    private static readonly BOT_CONTRACT_ABI;
     private initializeContracts;
     private initializeOptimizationModules;
     private checkAaveLiquidity;
@@ -113,13 +114,17 @@ declare class EnhancedMEVBot {
     private updateSimulationStats;
     private printSimulationSummary;
     scanForArbitrageOpportunities(): Promise<ArbitrageOpportunity[]>;
+    private scanDirectPriceOpportunities;
     scanCrossChainOpportunities(): Promise<CrossChainOpportunity[]>;
     private createMEVBundle;
     private submitMEVBundle;
     private estimateGasSettings;
+    private determineSushiFirst;
     private convertToLegacyFormat;
     private checkCircuitBreaker;
     monitorAndExecute(): Promise<void>;
+    private scanInterval;
+    private liquidityInterval;
     start(): Promise<void>;
     stop(): Promise<void>;
     private getCurrentCapital;

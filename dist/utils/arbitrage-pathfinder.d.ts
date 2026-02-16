@@ -7,7 +7,7 @@ export interface ArbitrageEdge {
     router: DEXRouter;
     rate: number;
     fee: number;
-    gaseCost: bigint;
+    gasCost: bigint;
     liquidityDepth: bigint;
     weight: number;
 }
@@ -49,9 +49,19 @@ export declare class EnhancedArbitragePathfinder {
      */
     private buildTokenGraph;
     /**
-     * Create arbitrage edge with rate calculation
+     * Create arbitrage edge with real on-chain rate query
      */
     private createArbitrageEdge;
+    /**
+     * Query actual on-chain exchange rate from a DEX router
+     */
+    private queryOnChainRate;
+    /**
+     * Estimate rate from known price relationships (fallback)
+     */
+    private estimateRateFromPriceFeeds;
+    private getEstimatedUSDPrice;
+    private getTokenDecimals;
     /**
      * Find direct arbitrage paths between two DEXes
      */

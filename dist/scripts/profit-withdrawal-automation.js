@@ -52,6 +52,8 @@ class ProfitWithdrawalAutomation {
             "function withdraw(address token) external",
             "function emergencyWithdraw(address token) external",
             "function owner() external view returns (address)",
+            "function profitWallet() external view returns (address)",
+            "function setProfitWallet(address) external",
             "function balanceOf(address) external view returns (uint256)"
         ];
         this.contract = new ethers_1.ethers.Contract(contractAddress, contractABI, this.wallet);
@@ -60,9 +62,27 @@ class ProfitWithdrawalAutomation {
         if (owner.toLowerCase() !== this.wallet.address.toLowerCase()) {
             throw new Error(`Not contract owner. Owner: ${owner}, Wallet: ${this.wallet.address}`);
         }
+        // Get current profit wallet
+        let profitWallet;
+        try {
+            profitWallet = await this.contract.profitWallet();
+        }
+        catch (error) {
+            profitWallet = owner; // Fallback for older contracts
+        }
+        // Set profit wallet from environment if configured
+        if (process.env.PROFIT_WALLET_ADDRESS &&
+            profitWallet.toLowerCase() !== process.env.PROFIT_WALLET_ADDRESS.toLowerCase()) {
+            console.log(chalk_1.default.yellow(`🔄 Updating profit wallet to: ${process.env.PROFIT_WALLET_ADDRESS}`));
+            const tx = await this.contract.setProfitWallet(process.env.PROFIT_WALLET_ADDRESS);
+            await tx.wait();
+            profitWallet = process.env.PROFIT_WALLET_ADDRESS;
+            console.log(chalk_1.default.green('✅ Profit wallet updated successfully'));
+        }
         console.log(chalk_1.default.green('💰 Profit Withdrawal Automation initialized'));
         console.log(chalk_1.default.cyan(`📍 Contract: ${contractAddress}`));
         console.log(chalk_1.default.cyan(`👤 Owner: ${this.wallet.address}`));
+        console.log(chalk_1.default.cyan(`💼 Profit Wallet: ${profitWallet}`));
         console.log(chalk_1.default.cyan(`⏰ Auto-withdraw: Every ${this.config.autoWithdrawInterval} hours`));
     }
     async checkProfitBalances() {
